@@ -44,6 +44,7 @@
   var modal_editing_id = null;
   var menuOpen = false;
   var openMenu = null;
+  var openMenuPos = null;
   var viewOnlyActive = false;
   var viewOnlyTodo = false;
 
@@ -122,14 +123,18 @@
     var chips = list.map(function(l){
       var key = 'link:' + l.id;
       var open = openMenu === key;
-      var menu = open ? '<div class="td-action-menu absolute left-0 top-6 z-20 bg-white border border-slate-200 rounded-lg shadow-lg w-36 overflow-hidden" onclick="event.stopPropagation()">' +
-        '<a href="' + esc(l.url) + '" target="_blank" rel="noopener" onclick="tdToggleActionMenu(\'' + key + '\')" class="block px-3 py-2 text-xs hover:bg-slate-50 text-slate-600">開啟連結</a>' +
-        '<button onclick="tdToggleActionMenu(\'' + key + '\'); tdOpenLinkModal(\'' + entityType + '\',\'' + entityId + '\',\'' + l.id + '\')" class="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-600">編輯</button>' +
-        '<button onclick="tdDeleteLink(\'' + l.id + '\')" class="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-rose-500">刪除連結</button>' +
-      '</div>' : '';
+      var menu = '';
+      if (open) {
+        var rows = [
+          '<a href="' + esc(l.url) + '" target="_blank" rel="noopener" onclick="tdToggleActionMenu(\'' + key + '\')" class="block px-3 py-2 text-xs hover:bg-slate-50 text-slate-600">開啟連結</a>',
+          '<button onclick="tdToggleActionMenu(\'' + key + '\'); tdOpenLinkModal(\'' + entityType + '\',\'' + entityId + '\',\'' + l.id + '\')" class="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-600">編輯</button>',
+          '<button onclick="tdDeleteLink(\'' + l.id + '\')" class="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-rose-500">刪除連結</button>'
+        ];
+        menu = dropdownHtml(rows);
+      }
       return '<span class="group relative inline-flex items-center rounded border border-slate-200 bg-white text-xs">' +
         '<a href="' + esc(l.url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="px-2 py-1 hover:bg-slate-50 text-slate-600 truncate max-w-[120px] inline-block align-middle" title="' + esc(l.label) + '">' + (l.icon||'🔗') + ' ' + esc(l.label) + '</a>' +
-        '<button onclick="event.stopPropagation(); tdToggleActionMenu(\'' + key + '\')" class="td-more-btn px-1 text-slate-300 opacity-0 group-hover:opacity-100 hover:text-slate-600 align-middle">⋯</button>' +
+        '<button onclick="event.stopPropagation(); tdToggleActionMenu(\'' + key + '\', event)" class="td-more-btn px-1 text-slate-300 opacity-0 group-hover:opacity-100 hover:text-slate-600 align-middle">⋯</button>' +
         menu +
       '</span>';
     }).join('');
@@ -139,19 +144,42 @@
   }
 
   // ---------------- 通用「更多操作」選單 ----------------
+  function dropdownHtml(rowsHtmlArray){
+    if (!openMenuPos) return '';
+    return '<div class="td-action-menu fixed z-50 bg-white border border-slate-200 rounded-lg shadow-lg w-40 overflow-hidden" style="top:' + openMenuPos.top + 'px; left:' + openMenuPos.left + 'px;" onclick="event.stopPropagation()">' +
+      rowsHtmlArray.join('') +
+    '</div>';
+  }
   function actionsButtonHtml(key, items){
     var open = openMenu === key;
-    var menu = open ? '<div class="td-action-menu absolute right-0 top-8 z-20 bg-white border border-slate-200 rounded-lg shadow-lg w-40 overflow-hidden" onclick="event.stopPropagation()">' +
-      items.map(function(it){
+    var menu = '';
+    if (open) {
+      var rows = items.map(function(it){
         return '<button onclick="' + it[1] + '" class="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 ' + (it[2]||'text-slate-600') + '">' + it[0] + '</button>';
-      }).join('') +
-    '</div>' : '';
+      });
+      menu = dropdownHtml(rows);
+    }
     return '<div class="relative inline-block">' +
-      '<button onclick="event.stopPropagation(); tdToggleActionMenu(\'' + key + '\')" class="td-more-btn w-7 h-7 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-400 text-sm leading-none">⋯</button>' +
+      '<button onclick="event.stopPropagation(); tdToggleActionMenu(\'' + key + '\', event)" class="td-more-btn w-7 h-7 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-400 text-sm leading-none">⋯</button>' +
       menu +
     '</div>';
   }
-  window.tdToggleActionMenu = function(key){ openMenu = (openMenu===key) ? null : key; render(); };
+  window.tdToggleActionMenu = function(key, ev){
+    if (openMenu === key) { openMenu = null; openMenuPos = null; render(); return; }
+    openMenu = key;
+    openMenuPos = null;
+    if (ev && ev.currentTarget && ev.currentTarget.getBoundingClientRect) {
+      var rect = ev.currentTarget.getBoundingClientRect();
+      var menuWidth = 160, menuHeightEstimate = 170;
+      var top = rect.bottom + 4;
+      var left = rect.right - menuWidth;
+      if (top + menuHeightEstimate > window.innerHeight) top = Math.max(8, rect.top - menuHeightEstimate - 4);
+      if (left < 8) left = 8;
+      if (left + menuWidth > window.innerWidth - 8) left = window.innerWidth - menuWidth - 8;
+      openMenuPos = { top: top, left: left };
+    }
+    render();
+  };
   window.tdOpenLinkModal = function(entityType, entityId, existingId){
     var data = existingId ? Object.assign({}, links.find(function(l){return l.id===existingId;})) : { icon: '🔗' };
     modal_editing_id = existingId || null;
@@ -919,14 +947,20 @@
       default: mainHtml = '';
     }
 
+    var prevMainEl = document.getElementById('td-main');
+    var prevScrollTop = prevMainEl ? prevMainEl.scrollTop : 0;
+
     document.getElementById('root').innerHTML =
       '<div class="h-screen flex overflow-hidden">' +
         sidebarHtml +
         '<div class="flex-1 flex flex-col overflow-hidden">' +
           topbarHtml +
-          '<main class="flex-1 overflow-y-auto p-6">' + mainHtml + '</main>' +
+          '<main id="td-main" class="flex-1 overflow-y-auto p-6">' + mainHtml + '</main>' +
         '</div>' +
       '</div>' + renderModal();
+
+    var newMainEl = document.getElementById('td-main');
+    if (newMainEl) newMainEl.scrollTop = prevScrollTop;
   }
 
   document.addEventListener('keydown', function(e){
