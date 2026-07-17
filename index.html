@@ -408,7 +408,10 @@
           '<button onclick="event.stopPropagation(); tdDeleteClient(\'' + c.id + '\')" class="text-xs text-slate-300 hover:text-rose-500 px-1">✕</button>' +
         '</div>';
       if (expanded) {
-        html += '<div class="px-4 pb-3 pt-1"><div onclick="event.stopPropagation()">' + linksSectionHtml('client', c.id) + '</div></div>';
+        html += '<div class="px-4 pb-3 pt-1 space-y-2">' +
+          (c.handover_notes ? '<div class="text-xs bg-amber-50 border border-amber-100 text-amber-800 rounded-lg px-3 py-2"><b>交接備註：</b>' + esc(c.handover_notes) + '</div>' : '') +
+          '<div onclick="event.stopPropagation()">' + linksSectionHtml('client', c.id) + '</div>' +
+        '</div>';
         var camps = campaignsOfClient(c.id);
         html += '<div class="px-4 pb-4 space-y-3">';
         if (!camps.length) html += '<div class="text-xs text-slate-400 py-3">還沒有產品／活動案件。</div>';
