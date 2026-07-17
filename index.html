@@ -39,6 +39,7 @@
   var expandedClients = {};
   var expandedCampaigns = {};
   var expandedNotes = {};
+  var expandedFlightNotes = {};
   var flightFilterChip = 'all';
   var modal = null;
   var modal_editing_id = null;
@@ -70,11 +71,29 @@
     noEndDate: { label: '未設定結束日', cls: 'bg-slate-100 text-slate-500' },
     upcoming: { label: '即將開始', cls: 'bg-slate-100 text-slate-600' },
     active: { label: '執行中', cls: 'bg-blue-100 text-blue-700' },
-    dueSoon: { label: '即將到期', cls: 'bg-amber-100 text-amber-700' },
-    endingToday: { label: '今日結束', cls: 'bg-purple-100 text-purple-700' },
-    ended: { label: '已結束', cls: 'bg-rose-100 text-rose-700' }
+    dueSoon: { label: '即將到期', cls: 'bg-orange-100 text-orange-700' },
+    endingToday: { label: '今日結束', cls: 'bg-rose-100 text-rose-700' },
+    ended: { label: '已結束', cls: 'bg-slate-200 text-slate-500' }
   };
   var LINK_ICONS = ['🔗','📁','📄','📊','☁️','📅','💬','🖥️','📝','📎'];
+
+  var BILLING_MODE_OPTIONS = [['', '不指定'], ['prepay','預先請款'], ['closing','結案請款'], ['advance','代墊請款'], ['other','其他']];
+  var BILLING_MODE_META = {
+    prepay: { label: '預先請款', cls: 'bg-sky-100 text-sky-700' },
+    closing: { label: '結案請款', cls: 'bg-violet-100 text-violet-700' },
+    advance: { label: '代墊請款', cls: 'bg-slate-100 text-slate-600' },
+    other: { label: '其他', cls: 'bg-slate-100 text-slate-500' }
+  };
+  var BILLING_STATUS_CLASS = {
+    '結案請款': 'bg-violet-100 text-violet-700',
+    '等待結案資料': 'bg-yellow-50 text-yellow-700',
+    '尚未開立發票': 'bg-orange-100 text-orange-700',
+    '已開立發票': 'bg-blue-50 text-blue-600',
+    '已送請款': 'bg-indigo-100 text-indigo-700',
+    '已收款': 'bg-emerald-100 text-emerald-700',
+    '尚未請款': 'bg-slate-100 text-slate-500',
+    '等待請款': 'bg-slate-100 text-slate-600'
+  };
 
   // ---------------- helpers ----------------
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -102,17 +121,76 @@
     if (diffEnd <= 7) return 'dueSoon';
     return 'active';
   }
+  function statusLabelText(f){
+    var st = computeStatus(f);
+    if (st === 'dueSoon') {
+      var d = dayDiff(f.end_date);
+      return d === 1 ? '明日結束' : (d + ' 天後結束');
+    }
+    return FLIGHT_STATUS[st] ? FLIGHT_STATUS[st].label : '';
+  }
+
+  function computeBillingStatus(f){
+    if (!f.billing_mode) return null;
+    if (f.payment_received) return '已收款';
+    if (f.billing_submitted) return '已送請款';
+    if (f.invoice_issued) return '已開立發票';
+    var today = todayMid();
+    if (f.billing_mode === 'prepay') {
+      var start = parseDate(f.start_date);
+      var diffToStart = start ? Math.round((start - today) / 86400000) : null;
+      if (diffToStart !== null && diffToStart <= 3) return '尚未開立發票';
+      return '尚未請款';
+    }
+    if (f.billing_mode === 'closing') {
+      var end = parseDate(f.end_date);
+      if (!end) return '等待結案資料';
+      if (today <= end) return '結案請款';
+      var days = (f.closing_processing_days === null || f.closing_processing_days === undefined) ? 5 : f.closing_processing_days;
+      var deadline = new Date(end); deadline.setDate(deadline.getDate() + days);
+      if (today <= deadline) return '等待結案資料';
+      return '尚未開立發票';
+    }
+    if (f.billing_mode === 'advance') {
+      var end2 = parseDate(f.end_date);
+      if (!end2 || today <= end2) return null;
+      return '等待請款';
+    }
+    return null;
+  }
+  function fmtMoney(n){ return 'NT$' + Math.round(Number(n)||0).toLocaleString(); }
+  function moneyBadgeHtml(f){
+    if (f.ad_budget === null || f.ad_budget === undefined || f.ad_budget === '') return '';
+    return '<span class="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700">' + fmtMoney(f.ad_budget) + '</span>';
+  }
+  function billingBadgeHtml(f){
+    if (!f.billing_mode) return '';
+    var status = computeBillingStatus(f);
+    if (status) {
+      var cls = BILLING_STATUS_CLASS[status] || 'bg-slate-100 text-slate-600';
+      return '<span class="text-xs font-semibold px-2 py-0.5 rounded-full ' + cls + '">' + status + '</span>';
+    }
+    var meta = BILLING_MODE_META[f.billing_mode];
+    return meta ? '<span class="text-xs font-semibold px-2 py-0.5 rounded-full ' + meta.cls + '">' + meta.label + '</span>' : '';
+  }
 
   function computeTodos(){
     var todos = [];
     flights.forEach(function(f){
       var st = computeStatus(f);
       if ((st === 'active' || st === 'dueSoon' || st === 'endingToday') && !f.is_brief_sent) todos.push({ label: '已進入檔期但尚未發單', f: f });
-      if (st === 'dueSoon') todos.push({ label: '即將到期（剩 ' + dayDiff(f.end_date) + ' 天）', f: f });
+      if (st === 'dueSoon') todos.push({ label: statusLabelText(f), f: f });
       if (st === 'endingToday') todos.push({ label: '今日結束', f: f });
       if (st === 'upcoming') todos.push({ label: '即將開始', f: f });
       if (st === 'noEndDate') todos.push({ label: '沒有填寫結束日期', f: f });
       if (!linksOf('flight', f.id).length && !linksOf('campaign', f.campaign_id).length) todos.push({ label: '缺少必要連結', f: f });
+      if (f.billing_mode) {
+        var bStatus = computeBillingStatus(f);
+        if (f.billing_mode === 'prepay' && bStatus === '尚未開立發票') todos.push({ label: '預先請款尚未開立發票', f: f });
+        if (f.billing_mode === 'closing' && bStatus === '尚未開立發票') todos.push({ label: '結案請款尚未開立發票', f: f });
+        if (f.billing_mode === 'advance' && bStatus === '等待請款') todos.push({ label: '代墊案件等待請款', f: f });
+        if (bStatus === '已送請款') todos.push({ label: '已送請款，等待收款', f: f });
+      }
     });
     return todos;
   }
@@ -349,6 +427,8 @@
       data.id = null;
       data.flight_name = (src.flight_name ? src.flight_name : mediaLabel(src)) + '（複製）';
       data.start_date = ''; data.end_date = ''; data.is_brief_sent = false; data.brief_sent_date = '';
+      data.invoice_issued = false; data.invoice_issued_date = ''; data.billing_submitted = false; data.billing_submitted_date = '';
+      data.payment_received = false; data.payment_received_date = ''; data.notes = '';
     } else {
       data = { campaign_id: campaignId, media_platform: 'Meta' };
     }
@@ -373,7 +453,16 @@
       media_platform: f.media_platform.value, custom_media_name: f.custom_media_name.value.trim(),
       start_date: f.start_date.value, end_date: f.end_date.value || null,
       is_brief_sent: f.is_brief_sent.checked, brief_sent_date: f.is_brief_sent.checked ? (f.brief_sent_date.value || null) : null,
-      notes: f.notes.value.trim()
+      ad_budget: f.ad_budget.value !== '' ? Number(f.ad_budget.value) : null,
+      service_fee_percent: f.service_fee_percent.value !== '' ? Number(f.service_fee_percent.value) : null,
+      billing_mode: f.billing_mode.value || null,
+      closing_processing_days: f.closing_processing_days ? Number(f.closing_processing_days.value) : 5,
+      invoice_issued: f.invoice_issued.checked,
+      invoice_issued_date: f.invoice_issued.checked ? (f.invoice_issued_date.value || null) : null,
+      billing_submitted: f.billing_submitted.checked,
+      billing_submitted_date: f.billing_submitted.checked ? (f.billing_submitted_date.value || null) : null,
+      payment_received: f.payment_received.checked,
+      payment_received_date: f.payment_received.checked ? (f.payment_received_date.value || null) : null
     };
     if (!payload.start_date) return;
     var editId = modal_editing_id;
@@ -397,8 +486,6 @@
   function statusBadge(meta){ return '<span class="text-xs font-semibold px-2 py-0.5 rounded-full ' + meta.cls + '">' + meta.label + '</span>'; }
 
   function flightRow(f, showCampaignClient){
-    var st = computeStatus(f);
-    var meta = FLIGHT_STATUS[st];
     var camp = showCampaignClient ? campaigns.find(function(c){return c.id===f.campaign_id;}) : null;
     var cli = showCampaignClient && camp ? clients.find(function(c){return c.id===camp.client_id;}) : null;
     var title = f.flight_name || mediaLabel(f);
@@ -409,15 +496,23 @@
       ['移至已結束', "tdToggleActionMenu('" + key + "'); tdMarkFlightEnded('" + f.id + "')"],
       ['刪除檔期', "tdToggleActionMenu('" + key + "'); tdDeleteFlight('" + f.id + "')", 'text-rose-500']
     ];
+    var stMeta = FLIGHT_STATUS[computeStatus(f)];
     return (
-      '<div class="flex items-center gap-3 px-3 py-2.5 border border-slate-200 rounded-lg bg-white hover:border-slate-300 cursor-pointer" onclick="tdOpenFlightModal(\'' + f.campaign_id + '\',\'' + f.id + '\')">' +
-        (showCampaignClient ? '<div class="w-40 shrink-0 truncate text-xs text-slate-500">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp?camp.name:'') + '</div>' : '') +
-        '<div class="w-32 shrink-0 truncate text-sm font-semibold" title="' + esc(title) + '">' + esc(title) + '</div>' +
-        '<div class="w-16 shrink-0 text-xs px-1.5 py-0.5 rounded border border-slate-200 text-slate-500 text-center truncate">' + esc(mediaLabel(f)) + '</div>' +
-        '<div class="w-28 shrink-0 text-xs text-slate-500 mono">' + fmtDate(f.start_date) + ' – ' + fmtDate(f.end_date) + '</div>' +
-        '<div class="w-24 shrink-0">' + statusBadge(meta) + '</div>' +
-        '<div class="flex-1 min-w-0" onclick="event.stopPropagation()">' + linksSectionHtml('flight', f.id, true) + '</div>' +
-        '<div class="shrink-0" onclick="event.stopPropagation()">' + actionsButtonHtml(key, items) + '</div>' +
+      '<div class="border border-slate-200 rounded-lg bg-white hover:border-slate-300 cursor-pointer" onclick="tdOpenFlightModal(\'' + f.campaign_id + '\',\'' + f.id + '\')">' +
+        '<div class="flex items-center gap-3 px-3 pt-2.5">' +
+          (showCampaignClient ? '<div class="w-40 shrink-0 truncate text-xs text-slate-500">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp?camp.name:'') + '</div>' : '') +
+          '<div class="flex-1 min-w-0 truncate text-sm font-semibold" title="' + esc(title) + '">' + esc(title) + '</div>' +
+          '<div class="w-16 shrink-0 text-xs px-1.5 py-0.5 rounded border border-slate-200 text-slate-500 text-center truncate">' + esc(mediaLabel(f)) + '</div>' +
+          '<div class="w-28 shrink-0 text-xs text-slate-500 mono">' + fmtDate(f.start_date) + ' – ' + fmtDate(f.end_date) + '</div>' +
+          '<div onclick="event.stopPropagation()">' + linksSectionHtml('flight', f.id, true) + '</div>' +
+          '<div class="shrink-0" onclick="event.stopPropagation()">' + actionsButtonHtml(key, items) + '</div>' +
+        '</div>' +
+        '<div class="flex items-center flex-wrap gap-1.5 px-3 py-2">' +
+          '<span class="text-xs font-semibold px-2 py-0.5 rounded-full ' + stMeta.cls + '">' + statusLabelText(f) + '</span>' +
+          moneyBadgeHtml(f) +
+          billingBadgeHtml(f) +
+          '<div onclick="event.stopPropagation()">' + flightNotesHtml(f) + '</div>' +
+        '</div>' +
       '</div>'
     );
   }
@@ -471,32 +566,20 @@
       return camp && camp.client_id === clientId;
     });
   }
-  function campaignSummary(camp){
+  function campaignBadge(camp){
     var fl = flightsOfCampaign(camp.id);
-    if (!fl.length) return '還沒有廣告檔期';
-    var running = fl.filter(function(f){return computeStatus(f)==='active';}).length;
-    var ends = fl.map(function(f){return f.end_date;}).filter(Boolean).sort();
-    var latestEnd = ends.length ? ends[ends.length-1] : null;
-    return fl.length + ' 個檔期｜' + running + ' 個執行中｜最近結束日：' + (latestEnd?fmtDate(latestEnd):'未設定');
-  }
-  function clientSummary(c){
-    var camps = campaignsOfClient(c.id);
-    var allFlights = [];
-    camps.forEach(function(camp){ flightsOfCampaign(camp.id).forEach(function(f){ allFlights.push(f); }); });
-    var running = allFlights.filter(function(f){return computeStatus(f)==='active';}).length;
-    var dueSoonN = allFlights.filter(function(f){return computeStatus(f)==='dueSoon';}).length;
-    var upcomingN = allFlights.filter(function(f){return computeStatus(f)==='upcoming';}).length;
-    var parts = [camps.length + ' 個案件', running + ' 個執行中', dueSoonN + ' 個即將到期', upcomingN + ' 個即將開始'];
-    var myTodos = computeTodos().filter(function(t){
-      var camp = campaigns.find(function(cc){return cc.id===t.f.campaign_id;});
-      return camp && camp.client_id === c.id;
-    });
-    if (myTodos.length) {
-      myTodos.sort(function(a,b){ var da=a.f.end_date||'9999-99', db=b.f.end_date||'9999-99'; return da<db?-1:(da>db?1:0); });
-      var t0 = myTodos[0];
-      parts.push('最近待辦：' + (t0.f.end_date ? fmtDate(t0.f.end_date)+' ' : '') + t0.label);
+    if (!fl.length) return '';
+    var billingOrder = ['尚未開立發票', '等待請款', '已開立發票', '已送請款'];
+    for (var i = 0; i < billingOrder.length; i++) {
+      var bm = fl.find(function(f){ return computeBillingStatus(f) === billingOrder[i]; });
+      if (bm) return billingBadgeHtml(bm);
     }
-    return parts.join('｜');
+    var order = ['endingToday', 'dueSoon', 'active', 'upcoming', 'noEndDate', 'ended'];
+    for (var j = 0; j < order.length; j++) {
+      var sm = fl.find(function(f){ return computeStatus(f) === order[j]; });
+      if (sm) { var meta = FLIGHT_STATUS[order[j]]; return '<span class="text-xs font-semibold px-2 py-0.5 rounded-full ' + meta.cls + '">' + statusLabelText(sm) + '</span>'; }
+    }
+    return '';
   }
   function handoverNotesHtml(c){
     var raw = (c.handover_notes || '').trim();
@@ -517,6 +600,36 @@
     '</div>';
   }
   window.tdToggleNotes = function(id){ expandedNotes[id] = !expandedNotes[id]; render(); };
+
+  function flightNotesHtml(f){
+    var raw = (f.notes || '').trim();
+    var expanded = !!expandedFlightNotes[f.id];
+    var lines = raw ? raw.split('\n').map(function(s){return s.trim();}).filter(Boolean) : [];
+    var isList = lines.length > 1;
+    var toggleLabel = raw ? ('備註' + (isList ? '（'+lines.length+'）' : '')) : '＋新增備註';
+    var btn = '<button onclick="event.stopPropagation(); tdToggleFlightNotes(\'' + f.id + '\')" class="text-xs px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-500 inline-flex items-center gap-1">📝 ' + toggleLabel + '</button>';
+    var panel = '';
+    if (expanded) {
+      var inner = isList
+        ? '<ul class="list-disc pl-4 space-y-0.5">' + lines.map(function(l){return '<li>'+esc(l)+'</li>';}).join('') + '</ul>'
+        : (raw ? '<p>' + esc(raw) + '</p>' : '<p class="text-slate-400">尚無備註。</p>');
+      panel = '<div class="mt-2 bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs text-slate-600" onclick="event.stopPropagation()">' +
+        inner +
+        '<form onsubmit="tdSubmitFlightNotes(event, \'' + f.id + '\')" class="mt-2 flex gap-2">' +
+          '<textarea name="notes" rows="2" class="flex-1 px-2 py-1 border border-slate-200 rounded-lg text-xs" placeholder="每行一點，或直接寫一段話...">' + esc(raw) + '</textarea>' +
+          '<button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs h-fit self-end">儲存</button>' +
+        '</form>' +
+      '</div>';
+    }
+    return '<div>' + btn + panel + '</div>';
+  }
+  window.tdToggleFlightNotes = function(id){ expandedFlightNotes[id] = !expandedFlightNotes[id]; render(); };
+  window.tdSubmitFlightNotes = async function(ev, id){
+    ev.preventDefault();
+    var val = ev.target.notes.value;
+    await sb.from('ad_flights').update({ notes: val }).eq('id', id);
+    await loadAll();
+  };
   window.tdExpandAllClients = function(){
     clients.forEach(function(c){ expandedClients[c.id] = true; });
     campaigns.forEach(function(c){ expandedCampaigns[c.id] = true; });
@@ -569,7 +682,6 @@
           '<span class="text-xs text-slate-400 w-3">' + (expanded?'▾':'▸') + '</span>' +
           '<span class="font-semibold">' + esc(c.name) + '</span>' +
           statusBadge(st) +
-          '<span class="text-xs text-slate-400 ml-2 truncate">' + clientSummary(c) + '</span>' +
           '<div class="flex-1"></div>' +
           '<button onclick="event.stopPropagation(); tdOpenCampaignModal(\'' + c.id + '\')" class="text-xs px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 shrink-0">＋ 新增案件</button>' +
           '<div onclick="event.stopPropagation()" class="shrink-0">' + actionsButtonHtml(ckey, citems) + '</div>' +
@@ -596,7 +708,7 @@
             '<div class="flex items-center gap-2 px-3 py-2 cursor-pointer" onclick="tdToggleCampaign(\'' + camp.id + '\')">' +
               '<span class="text-xs text-slate-400 w-3">' + (campExpanded?'▾':'▸') + '</span>' +
               '<span class="text-sm font-semibold">' + esc(camp.name) + '</span>' +
-              '<span class="text-xs text-slate-400">' + campaignSummary(camp) + '</span>' +
+              campaignBadge(camp) +
               '<div class="flex-1"></div>' +
               '<button onclick="event.stopPropagation(); tdOpenFlightModal(\'' + camp.id + '\')" class="text-xs px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 shrink-0">＋ 新增檔期</button>' +
               '<div onclick="event.stopPropagation()" class="shrink-0">' + actionsButtonHtml(kkey, kitems) + '</div>' +
@@ -794,6 +906,12 @@
   function inputClass(){ return 'w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm'; }
   function textInput(name, value){ return '<input name="' + name + '" value="' + esc(value||'') + '" class="' + inputClass() + '">'; }
   function dateInput(name, value){ return '<input type="date" name="' + name + '" value="' + esc(value||'') + '" class="' + inputClass() + '">'; }
+  function numInput(name, value, opts){
+    opts = opts || {};
+    return '<input type="number" name="' + name + '" id="' + (opts.id||name) + '" value="' + esc(value===null||value===undefined?'':value) + '"' +
+      (opts.step!==undefined?(' step="'+opts.step+'"'):'') + (opts.min!==undefined?(' min="'+opts.min+'"'):'') + (opts.max!==undefined?(' max="'+opts.max+'"'):'') +
+      (opts.oninput?(' oninput="'+opts.oninput+'"'):'') + ' class="' + inputClass() + '">';
+  }
   function textarea(name, value){ return '<textarea name="' + name + '" rows="2" class="' + inputClass() + '">' + esc(value||'') + '</textarea>'; }
   function selectHtml(name, options, value, onchange){
     return '<select name="' + name + '" class="' + inputClass() + '"' + (onchange?(' onchange="'+onchange+'"'):'') + '>' +
@@ -840,8 +958,17 @@
     var d = m.data;
     var camp = campaigns.find(function(c){return c.id===m.campaignId;});
     var cli = camp ? clients.find(function(c){return c.id===camp.client_id;}) : null;
+    var budget = d.ad_budget || 0, pct = d.service_fee_percent || 0;
+    var fee = d.service_fee_amount != null ? d.service_fee_amount : Math.round(budget*pct/100*100)/100;
+    var subtotal = d.subtotal_before_tax != null ? d.subtotal_before_tax : Math.round((budget+fee)*100)/100;
+    var tax = d.tax_amount != null ? d.tax_amount : Math.round(subtotal*0.05*100)/100;
+    var total = d.invoice_total != null ? d.invoice_total : Math.round((subtotal+tax)*100)/100;
+    var closingDays = (d.closing_processing_days === null || d.closing_processing_days === undefined) ? 5 : d.closing_processing_days;
+    var billingMode = d.billing_mode || '';
     return '<form onsubmit="tdSubmitFlight(event)" class="p-5 overflow-y-auto flex-1">' +
       '<div class="text-xs text-slate-400 mb-3">所屬案件：<b class="text-slate-600">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp?camp.name:'') + '</b></div>' +
+
+      '<div class="text-xs font-bold text-slate-400 uppercase mb-2">基本資料</div>' +
       '<div class="grid grid-cols-2 gap-x-3">' +
         fieldHtml('檔期名稱', textInput('flight_name', d.flight_name)) +
         fieldHtml('媒體平台', selectHtml('media_platform', MEDIA_PRESETS.map(function(p){return [p,p];}), d.media_platform, 'tdOnMediaChange(this)')) +
@@ -851,14 +978,72 @@
         fieldHtml('廣告開始日', dateInput('start_date', d.start_date)) + fieldHtml('廣告結束日（可留空）', dateInput('end_date', d.end_date)) +
       '</div>' +
       checkboxHtml('is_brief_sent', d.is_brief_sent, '是否已發單', 'tdOnBriefSentChange(this)') +
-      '<div id="td-brief-date-row" class="mt-2" style="display:' + (d.is_brief_sent?'block':'none') + '">' + fieldHtml('發單日期', dateInput('brief_sent_date', d.brief_sent_date)) + '</div>' +
-      fieldHtml('檔期備註', textarea('notes', d.notes)) +
+      '<div id="td-brief-date-row" class="mt-2 mb-3" style="display:' + (d.is_brief_sent?'block':'none') + '">' + fieldHtml('發單日期', dateInput('brief_sent_date', d.brief_sent_date)) + '</div>' +
+
+      '<div class="text-xs font-bold text-slate-400 uppercase mb-2 mt-4">費用試算</div>' +
+      '<div class="grid grid-cols-2 gap-x-3">' +
+        fieldHtml('廣告費', numInput('ad_budget', d.ad_budget, { id:'td-ad-budget', step:'1', min:'0', oninput:'tdRecalcFees()' })) +
+        fieldHtml('服務費百分比（%）', numInput('service_fee_percent', d.service_fee_percent, { id:'td-service-pct', step:'0.1', min:'0', max:'100', oninput:'tdRecalcFees()' })) +
+      '</div>' +
+      '<div id="td-fee-preview" class="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg p-2.5 mb-3 space-y-0.5">' +
+        '<div>服務費：' + fmtMoney(fee) + '</div>' +
+        '<div>未稅總額：' + fmtMoney(subtotal) + '</div>' +
+        '<div>稅額（5%）：' + fmtMoney(tax) + '</div>' +
+        '<div class="font-semibold">發票總額：' + fmtMoney(total) + '</div>' +
+      '</div>' +
+
+      '<div class="text-xs font-bold text-slate-400 uppercase mb-2 mt-4">請款與發票</div>' +
+      fieldHtml('請款模式（選填）', selectHtml('billing_mode', BILLING_MODE_OPTIONS, billingMode, 'tdOnBillingModeChange(this)')) +
+      '<div id="td-closing-days-row" style="display:' + (billingMode==='closing'?'block':'none') + '">' +
+        fieldHtml('預計結案作業天數', numInput('closing_processing_days', closingDays, { step:'1', min:'0' })) +
+      '</div>' +
+      checkboxHtml('invoice_issued', d.invoice_issued, '是否已開立發票', 'tdOnInvoiceIssuedChange(this)') +
+      '<div id="td-invoice-date-row" class="mt-2 mb-3" style="display:' + (d.invoice_issued?'block':'none') + '">' + fieldHtml('發票開立日期', dateInput('invoice_issued_date', d.invoice_issued_date)) + '</div>' +
+      checkboxHtml('billing_submitted', d.billing_submitted, '是否已送出請款', 'tdOnBillingSubmittedChange(this)') +
+      '<div id="td-billing-date-row" class="mt-2 mb-3" style="display:' + (d.billing_submitted?'block':'none') + '">' + fieldHtml('送出請款日期', dateInput('billing_submitted_date', d.billing_submitted_date)) + '</div>' +
+      checkboxHtml('payment_received', d.payment_received, '是否已收款', 'tdOnPaymentReceivedChange(this)') +
+      '<div id="td-payment-date-row" class="mt-2" style="display:' + (d.payment_received?'block':'none') + '">' + fieldHtml('收款日期', dateInput('payment_received_date', d.payment_received_date)) + '</div>' +
+
       '<div class="flex gap-2 mt-4 sticky bottom-0 bg-white pt-2">' +
         '<button type="button" onclick="tdCloseModal()" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm">取消</button>' +
         '<button type="submit" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">' + (m.mode==='edit'?'儲存':'建立檔期') + '</button>' +
       '</div>' +
     '</form>';
   }
+  window.tdRecalcFees = function(){
+    var budgetEl = document.getElementById('td-ad-budget');
+    var pctEl = document.getElementById('td-service-pct');
+    var budget = budgetEl ? (parseFloat(budgetEl.value)||0) : 0;
+    var pct = pctEl ? (parseFloat(pctEl.value)||0) : 0;
+    var fee = Math.round(budget * pct / 100 * 100) / 100;
+    var subtotal = Math.round((budget + fee) * 100) / 100;
+    var tax = Math.round(subtotal * 0.05 * 100) / 100;
+    var total = Math.round((subtotal + tax) * 100) / 100;
+    var out = document.getElementById('td-fee-preview');
+    if (out) {
+      out.innerHTML =
+        '<div>服務費：' + fmtMoney(fee) + '</div>' +
+        '<div>未稅總額：' + fmtMoney(subtotal) + '</div>' +
+        '<div>稅額（5%）：' + fmtMoney(tax) + '</div>' +
+        '<div class="font-semibold">發票總額：' + fmtMoney(total) + '</div>';
+    }
+  };
+  window.tdOnBillingModeChange = function(sel){
+    var el = document.getElementById('td-closing-days-row');
+    if (el) el.style.display = sel.value === 'closing' ? 'block' : 'none';
+  };
+  window.tdOnInvoiceIssuedChange = function(cb){
+    var el = document.getElementById('td-invoice-date-row');
+    if (el) el.style.display = cb.checked ? 'block' : 'none';
+  };
+  window.tdOnBillingSubmittedChange = function(cb){
+    var el = document.getElementById('td-billing-date-row');
+    if (el) el.style.display = cb.checked ? 'block' : 'none';
+  };
+  window.tdOnPaymentReceivedChange = function(cb){
+    var el = document.getElementById('td-payment-date-row');
+    if (el) el.style.display = cb.checked ? 'block' : 'none';
+  };
   function renderLinkModal(m){
     var d = m.data;
     return '<form onsubmit="tdSubmitLink(event)" class="p-5 overflow-y-auto flex-1">' +
