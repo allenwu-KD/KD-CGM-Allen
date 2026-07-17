@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>客戶廣告專案管理儀表板</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif; }
+  .mono { font-family: "SFMono-Regular", Consolas, Menlo, monospace; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
+</style>
+</head>
+<body class="bg-slate-50">
+
+<div id="root"><div class="h-screen flex items-center justify-center text-slate-400 text-sm">載入中...</div></div>
+
+<script>
+(function(){
+
+  // ================= 設定：沿用同一個 Supabase 專案 =================
+  var SUPABASE_URL = "https://pcnexlmkcxuzyaoxbatb.supabase.co";
+  var SUPABASE_ANON_KEY = "sb_publishable_zcSGVPI8xHolHoPwcplmug_rcglL60a";
+  // ==================================================================
+
+  var configOk = SUPABASE_URL.indexOf('PASTE_YOUR') === -1 && SUPABASE_ANON_KEY.indexOf('PASTE_YOUR') === -1;
+  var sb = configOk ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+  var currentUser = null;
+  var authMode = 'login';
+  var authError = '', authInfo = '', authBusy = false;
+  var loaded = false;
+
+  var clients = [], campaigns = [], flights = [];
+  var activeView = 'dashboard';
+  var globalSearch = '';
+  var expandedClients = {};
+  var expandedCampaigns = {};
+  var flightFilterChip = 'all';
+  var modal = null; // { type: 'client'|'campaign'|'flight', mode:'add'|'edit', data:{...}, context:{...} }
+
+  var NAV = [
+    { key: 'dashboard', label: '總覽' },
+    { key: 'clients', label: '客戶管理' },
+    { key: 'campaigns', label: '產品／活動案件' },
+    { key: 'flights', label: '廣告檔期' },
+    { key: 'renewals', label: '續約提醒' },
+    { key: 'invoicing', label: '請款與發票' },
+    { key: 'cloud', label: '雲端資料' },
+    { key: 'archive', label: '暫停／已結束案件' }
+  ];
+
+  var CLIENT_STATUS = {
+    active: { label: '合作中', cls: 'bg-emerald-100 text-emerald-700' },
+    potential: { label: '潛在客戶', cls: 'bg-sky-100 text-sky-700' },
+    paused: { label: '暫停合作', cls: 'bg-slate-200 text-slate-600' },
+    ended: { label: '已結束', cls: 'bg-rose-100 text-rose-700' }
+  };
+  var PAYMENT_METHODS = { prepay: '預付', advance: '代墊', monthly: '月結', other: '其他' };
+  var MEDIA_PRESETS = ['Meta','Google','LINE','Dcard','TikTok','Yahoo','Taboola','OTV／CTV','其他'];
+  var INVOICE_STATUS = { not_issued: '未開立', issued: '已開立', not_needed: '不需開立' };
+  var RENEWAL_RESULT = { pending: '待詢問', client_evaluating: '客戶評估中', confirmed: '已確認續約', declined: '不續約', postponed: '延後執行' };
+  var FLIGHT_STATUS = {
+    upcoming: { label: '即將開始', cls: 'bg-slate-100 text-slate-600' },
+    active: { label: '執行中', cls: 'bg-blue-100 text-blue-700' },
+    renewal: { label: '續約提醒', cls: 'bg-amber-100 text-amber-700' },
+    endingToday: { label: '今日結束', cls: 'bg-purple-100 text-purple-700' },
+    paused: { label: '暫停中', cls: 'bg-rose-100 text-rose-700' },
+    renewedClosed: { label: '已結束(已續約)', cls: 'bg-slate-100 text-slate-500' }
+  };
+
+  // ---------------- helpers ----------------
+  function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+  function todayMid(){ var d = new Date(); d.setHours(0,0,0,0); return d; }
+  function todayStr(){ return new Date().toISOString().slice(0,10); }
+  function parseDate(s){ if(!s) return null; var p = s.split('-'); return new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)); }
+  function fmtDate(s){ if(!s) return '—'; var d = parseDate(s); return (d.getMonth()+1) + '/' + d.getDate(); }
+  function dayDiff(s){ if(!s) return null; var d = parseDate(s); return Math.round((d - todayMid()) / 86400000); }
+  function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function money(n){ return n === null || n === undefined || n === '' ? '—' : 'NT$ ' + Number(n).toLocaleString(); }
+
+  function campaignsOfClient(clientId){ return campaigns.filter(function(c){ return c.client_id === clientId; }); }
+  function flightsOfCampaign(campaignId){ return flights.filter(function(f){ return f.campaign_id === campaignId; }); }
+  function clientOf(campaignId){ var c = campaigns.find(function(x){return x.id===campaignId;}); return c ? clients.find(function(x){return x.id===c.client_id;}) : null; }
+  function campaignOf(flightId){ var f = flights.find(function(x){return x.id===flightId;}); return f ? campaigns.find(function(x){return x.id===f.campaign_id;}) : null; }
+
+  function computeStatus(f){
+    var today = todayMid();
+    var start = parseDate(f.start_date), end = parseDate(f.end_date);
+    if (!start || !end) return 'upcoming';
+    var diffEnd = Math.round((end - today) / 86400000);
+    if (today > end) {
+      var hasNext = flights.some(function(x){ return x.previous_flight_id === f.id; });
+      if (hasNext || f.renewal_result === 'confirmed') return 'renewedClosed';
+      return 'paused';
+    }
+    if (today < start) return 'upcoming';
+    if (diffEnd === 0) return 'endingToday';
+    if (diffEnd > 7) return 'active';
+    return 'renewal';
+  }
+  function mediaLabel(f){ return f.media_platform === '其他' ? (f.custom_media_name || '其他') : f.media_platform; }
+
+  function computeTodos(){
+    var todos = [];
+    flights.forEach(function(f){
+      var st = computeStatus(f);
+      var diffEnd = dayDiff(f.end_date);
+      if (f.renewal_result === 'pending' && diffEnd !== null && diffEnd <= 7 && diffEnd >= 0) todos.push({ label: '續約尚未詢問', f: f });
+      if (st === 'upcoming' && !f.is_brief_sent) todos.push({ label: '即將上線但尚未發單', f: f });
+      if (f.is_live_confirmed && !f.brief_link) todos.push({ label: '已上線但缺需求單連結', f: f });
+      if (f.is_live_confirmed && !f.materials_link) todos.push({ label: '已上線但缺素材連結', f: f });
+      if (f.payment_method === 'prepay' && !f.is_prepaid && f.prepay_due_date && todayStr() >= f.prepay_due_date) todos.push({ label: '預付款尚未確認', f: f });
+      if ((st === 'endingToday' || st === 'paused') && !f.report_link) todos.push({ label: '檔期已結束但尚未上傳資料報表', f: f });
+      if (f.invoice_status === 'not_issued' && todayStr() >= f.end_date) todos.push({ label: '尚未開立發票', f: f });
+      if (f.payment_date && !f.is_paid) todos.push({ label: '已請款但尚未收款', f: f });
+    });
+    return todos;
+  }
+
+  function linkButtons(entity, kind){
+    // kind: 'campaign' or 'flight' — both share folder/materials/brief-ish link fields
+    var links = kind === 'campaign'
+      ? [['資料總覽', entity.folder_link, '📁'], ['素材', entity.materials_link, '🖼️'], ['需求單', entity.brief_link, '📄']]
+      : [['資料報表', entity.report_link, '📊'], ['素材', entity.materials_link, '🖼️'], ['需求單', entity.brief_link, '📄']];
+    return '<div class="flex gap-1.5">' + links.map(function(l){
+      var label = l[0], url = l[1], icon = l[2];
+      if (url) {
+        return '<a href="' + esc(url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" class="text-xs px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600" title="' + label + '">' + icon + ' ' + label + '</a>';
+      }
+      return '<button onclick="event.stopPropagation(); tdPromptLink(\'' + kind + '\',\'' + entity.id + '\',\'' + (kind==='campaign' ? (label==='資料總覽'?'folder_link':label==='素材'?'materials_link':'brief_link') : (label==='資料報表'?'report_link':label==='素材'?'materials_link':'brief_link')) + '\')" class="text-xs px-2 py-1 rounded border border-dashed border-slate-300 text-slate-400 hover:text-slate-600 hover:border-slate-400">+ ' + label + '</button>';
+    }).join('') + '</div>';
+  }
+  window.tdPromptLink = async function(kind, id, field){
+    var url = prompt('貼上連結網址：');
+    if (!url) return;
+    var table = kind === 'campaign' ? 'campaigns' : 'ad_flights';
+    var patch = {}; patch[field] = url;
+    await sb.from(table).update(patch).eq('id', id);
+    await loadAll();
+  };
+
+  // ---------------- auth ----------------
+  async function initAuth(){
+    if (!configOk) { loaded = true; render(); return; }
+    var res = await sb.auth.getSession();
+    currentUser = res && res.data && res.data.session ? res.data.session.user : null;
+    loaded = true; render();
+    if (currentUser) loadAll();
+    sb.auth.onAuthStateChange(function(event, session){
+      var hadUser = !!currentUser;
+      currentUser = session ? session.user : null;
+      if (event === 'SIGNED_OUT') { clients=[]; campaigns=[]; flights=[]; render(); return; }
+      if (!hadUser && currentUser) { loadAll(); return; }
+      // 其他事件（例如切換視窗回來時 Supabase 自動刷新登入狀態）不重新載入、不重新渲染，
+      // 避免把使用者正在填寫的表單資料整個沖掉。
+    });
+  }
+  window.tdSetAuthMode = function(m){ authMode = m; authError=''; authInfo=''; render(); };
+  window.tdAuthSubmit = async function(ev){
+    ev.preventDefault();
+    var f = ev.target, email = f.email.value.trim(), password = f.password.value;
+    authError=''; authInfo=''; authBusy=true; render();
+    try {
+      if (authMode === 'signup') {
+        var r1 = await sb.auth.signUp({ email: email, password: password });
+        if (r1.error) throw r1.error;
+        if (!(r1.data && r1.data.session)) { authInfo = '註冊成功！如果專案有開啟信箱驗證，請先去收信確認，再回來登入。'; authMode = 'login'; }
+      } else {
+        var r2 = await sb.auth.signInWithPassword({ email: email, password: password });
+        if (r2.error) throw r2.error;
+      }
+    } catch (e) { authError = e.message || '發生錯誤'; }
+    authBusy = false; render();
+  };
+  window.tdLogout = async function(){ await sb.auth.signOut(); };
+
+  // ---------------- data ----------------
+  async function loadAll(){
+    loaded = false; render();
+    var res = await sb.from('clients').select('*, campaigns(*, ad_flights(*))').order('created_at', { ascending: true });
+    if (!res.error && res.data) {
+      clients = res.data.map(function(c){ var copy = Object.assign({}, c); delete copy.campaigns; return copy; });
+      campaigns = [];
+      flights = [];
+      res.data.forEach(function(c){
+        (c.campaigns || []).forEach(function(camp){
+          var campCopy = Object.assign({}, camp); delete campCopy.ad_flights;
+          campaigns.push(campCopy);
+          (camp.ad_flights || []).forEach(function(f){ flights.push(f); });
+        });
+      });
+    } else { clients=[]; campaigns=[]; flights=[]; if(res.error) console.error(res.error); }
+    loaded = true; render();
+  }
+
+  window.tdSetView = function(v){ activeView = v; render(); };
+  window.tdSetSearch = function(v){ globalSearch = v; render(); };
+  window.tdToggleClient = function(id){ expandedClients[id] = !expandedClients[id]; render(); };
+  window.tdToggleCampaign = function(id){ expandedCampaigns[id] = !expandedCampaigns[id]; render(); };
+  window.tdSetFlightFilter = function(k){ flightFilterChip = k; render(); };
+  window.tdToggleMenu = function(){ modal = modal && modal.type==='menu' ? null : { type:'menu' }; render(); };
+
+  // ---- client CRUD ----
+  window.tdOpenClientModal = function(existingId){
+    var data = existingId ? Object.assign({}, clients.find(function(c){return c.id===existingId;})) : { status:'active', default_payment_method:'prepay' };
+    modal_editing_id = existingId || null;
+    modal = { type:'client', mode: existingId?'edit':'add', data: data };
+    render();
+  };
+  window.tdSubmitClient = async function(ev){
+    ev.preventDefault();
+    var f = ev.target;
+    var payload = {
+      name: f.name.value.trim(), brand_name: f.brand_name.value.trim(), company_name: f.company_name.value.trim(),
+      tax_id: f.tax_id.value.trim(), contact_name: f.contact_name.value.trim(), contact_phone: f.contact_phone.value.trim(),
+      contact_email: f.contact_email.value.trim(), advisor: f.advisor.value.trim(), service_items: f.service_items.value.trim(),
+      common_media: f.common_media.value.trim(), contract_start: f.contract_start.value || null, contract_end: f.contract_end.value || null,
+      status: f.status.value, notes: f.notes.value.trim(), handover_notes: f.handover_notes.value.trim(),
+      default_payment_method: f.default_payment_method.value, default_invoice_info: f.default_invoice_info.value.trim(),
+      default_payment_terms: f.default_payment_terms.value.trim(), finance_notes: f.finance_notes.value.trim()
+    };
+    if (!payload.name) return;
+    modal = null; render();
+    if (modal_editing_id) { await sb.from('clients').update(payload).eq('id', modal_editing_id); }
+    else { await sb.from('clients').insert(payload); }
+    modal_editing_id = null;
+    await loadAll();
+  };
+  var modal_editing_id = null;
+  window.tdDeleteClient = async function(id){
+    if (!confirm('刪除這個客戶？底下所有產品案件與廣告檔期都會一併刪除。')) return;
+    await sb.from('clients').delete().eq('id', id);
+    await loadAll();
+  };
+
+  // ---- campaign CRUD ----
+  window.tdOpenCampaignModal = function(clientId, existingId){
+    var data = existingId ? Object.assign({}, campaigns.find(function(c){return c.id===existingId;})) : { client_id: clientId };
+    modal_editing_id = existingId || null;
+    modal = { type:'campaign', mode: existingId?'edit':'add', data: data, clientId: clientId };
+    render();
+  };
+  window.tdSubmitCampaign = async function(ev){
+    ev.preventDefault();
+    var f = ev.target;
+    var payload = {
+      client_id: modal.clientId, name: f.name.value.trim(), product_name: f.product_name.value.trim(),
+      goal: f.goal.value.trim(), budget: f.budget.value ? Number(f.budget.value) : null, kpi: f.kpi.value.trim(),
+      advisor: f.advisor.value.trim(), collaborators: f.collaborators.value.trim(), notes: f.notes.value.trim(),
+      folder_link: f.folder_link.value.trim(), materials_link: f.materials_link.value.trim(), brief_link: f.brief_link.value.trim()
+    };
+    if (!payload.name) return;
+    var editId = modal_editing_id;
+    modal = null; render();
+    if (editId) { await sb.from('campaigns').update(payload).eq('id', editId); }
+    else { await sb.from('campaigns').insert(payload); }
+    modal_editing_id = null;
+    await loadAll();
+  };
+  window.tdDeleteCampaign = async function(id){
+    if (!confirm('刪除這個產品／活動案件？底下所有廣告檔期都會一併刪除。')) return;
+    await sb.from('campaigns').delete().eq('id', id);
+    await loadAll();
+  };
+
+  // ---- ad flight CRUD ----
+  window.tdOpenFlightModal = function(campaignId, existingId, duplicateFromId){
+    var data;
+    if (existingId) { data = Object.assign({}, flights.find(function(f){return f.id===existingId;})); }
+    else if (duplicateFromId) {
+      var src = flights.find(function(f){return f.id===duplicateFromId;});
+      data = Object.assign({}, src);
+      data.id = null; data.start_date=''; data.end_date=''; data.budget=''; data.brief_link=''; data.materials_link='';
+      data.is_brief_sent=false; data.is_live_confirmed=false; data.invoice_status='not_issued'; data.invoice_date=null; data.invoice_number='';
+      data.payment_date=null; data.is_paid=false; data.has_asked_renewal=false; data.renewal_result='pending';
+      data.previous_flight_id = duplicateFromId; data.report_link='';
+    } else { data = { campaign_id: campaignId, media_platform:'Meta', invoice_status:'not_issued', renewal_result:'pending' }; }
+    modal_editing_id = existingId || null;
+    modal = { type:'flight', mode: existingId?'edit':'add', data: data, campaignId: campaignId };
+    render();
+  };
+  window.tdOnPaymentMethodChange = function(sel){
+    var v = sel.value;
+    ['prepay','advance','monthly'].forEach(function(k){
+      var el = document.getElementById('td-pay-' + k);
+      if (el) el.style.display = (v === k) ? 'block' : 'none';
+    });
+  };
+  window.tdOnMediaChange = function(sel){
+    var el = document.getElementById('td-custom-media-row');
+    if (el) el.style.display = sel.value === '其他' ? 'block' : 'none';
+  };
+  window.tdSubmitFlight = async function(ev){
+    ev.preventDefault();
+    var f = ev.target;
+    var val = function(name){ return f[name] ? f[name].value : ''; };
+    var payload = {
+      campaign_id: modal.campaignId,
+      media_platform: val('media_platform'), custom_media_name: val('custom_media_name').trim(),
+      ad_account: val('ad_account').trim(), ad_goal: val('ad_goal').trim(),
+      start_date: val('start_date'), end_date: val('end_date'),
+      budget: val('budget') ? Number(val('budget')) : null, kpi: val('kpi').trim(),
+      brief_sent_date: val('brief_sent_date') || null, is_brief_sent: f.is_brief_sent.checked,
+      is_live_confirmed: f.is_live_confirmed.checked, invoice_status: val('invoice_status'),
+      invoice_date: val('invoice_date') || null, invoice_number: val('invoice_number').trim(),
+      payment_method: val('payment_method') || null, payment_date: val('payment_date') || null, is_paid: f.is_paid.checked,
+      expected_renewal_check_date: val('expected_renewal_check_date') || null, has_asked_renewal: f.has_asked_renewal.checked,
+      renewal_result: val('renewal_result'), notes: val('notes').trim(),
+      report_link: val('report_link').trim(), materials_link: val('materials_link').trim(), brief_link: val('brief_link').trim(),
+      prepay_due_date: val('prepay_due_date') || null, is_prepaid: f.is_prepaid ? f.is_prepaid.checked : false,
+      prepaid_confirm_date: val('prepaid_confirm_date') || null,
+      advance_amount: val('advance_amount') ? Number(val('advance_amount')) : null,
+      expected_billing_date: val('expected_billing_date') || null, actual_billing_date: val('actual_billing_date') || null,
+      is_reimbursed: f.is_reimbursed ? f.is_reimbursed.checked : false,
+      monthly_terms_days: val('monthly_terms_days') ? Number(val('monthly_terms_days')) : null,
+      expected_payment_date: val('expected_payment_date') || null,
+      previous_flight_id: modal.data.previous_flight_id || null
+    };
+    if (!payload.start_date || !payload.end_date) return;
+    var editId = modal_editing_id;
+    modal = null; render();
+    if (editId) { await sb.from('ad_flights').update(payload).eq('id', editId); }
+    else { await sb.from('ad_flights').insert(payload); }
+    modal_editing_id = null;
+    await loadAll();
+  };
+  window.tdDeleteFlight = async function(id){
+    if (!confirm('刪除這個廣告檔期？')) return;
+    await sb.from('ad_flights').delete().eq('id', id);
+    await loadAll();
+  };
+  window.tdQuickToggle = async function(id, field, value){
+    var patch = {}; patch[field] = value;
+    await sb.from('ad_flights').update(patch).eq('id', id);
+    await loadAll();
+  };
+  window.tdCloseModal = function(){ modal = null; modal_editing_id = null; render(); };
+
+  // ---------------- render: shared bits ----------------
+  function statusBadge(meta){ return '<span class="text-xs font-semibold px-2 py-0.5 rounded-full ' + meta.cls + '">' + meta.label + '</span>'; }
+
+  function flightRow(f, showCampaignClient){
+    var st = computeStatus(f);
+    var meta = FLIGHT_STATUS[st];
+    var extra = st === 'renewal' ? '<span class="text-xs text-amber-600 ml-1">距離結束還有 ' + dayDiff(f.end_date) + ' 天</span>' : '';
+    var camp = showCampaignClient ? campaigns.find(function(c){return c.id===f.campaign_id;}) : null;
+    var cli = showCampaignClient && camp ? clients.find(function(c){return c.id===camp.client_id;}) : null;
+    var canRenew = f.renewal_result === 'confirmed' && !flights.some(function(x){return x.previous_flight_id===f.id;});
+    return (
+      '<div class="flex items-center gap-3 px-3 py-2.5 border border-slate-200 rounded-lg bg-white hover:border-slate-300 cursor-pointer" onclick="tdOpenFlightModal(\'' + f.campaign_id + '\',\'' + f.id + '\')">' +
+        (showCampaignClient ? '<div class="w-40 shrink-0 truncate text-xs text-slate-500">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp?camp.name:'') + '</div>' : '') +
+        '<div class="w-20 shrink-0 text-sm font-semibold">' + esc(mediaLabel(f)) + '</div>' +
+        '<div class="w-28 shrink-0 text-xs text-slate-500 mono">' + fmtDate(f.start_date) + ' – ' + fmtDate(f.end_date) + '</div>' +
+        '<div class="shrink-0">' + statusBadge(meta) + extra + '</div>' +
+        '<div class="flex-1"></div>' +
+        (canRenew ? '<button onclick="event.stopPropagation(); tdOpenFlightModal(\'' + f.campaign_id + '\', null, \'' + f.id + '\')" class="text-xs px-2 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-700">建立下一檔</button>' : '') +
+        '<div onclick="event.stopPropagation()">' + linkButtons(f, 'flight') + '</div>' +
+        '<button onclick="event.stopPropagation(); tdDeleteFlight(\'' + f.id + '\')" class="text-slate-300 hover:text-rose-500 text-xs px-1">✕</button>' +
+      '</div>'
+    );
+  }
+
+  // ---------------- render: views ----------------
+  function renderDashboard(){
+    var activeCount = clients.filter(function(c){return c.status==='active';}).length;
+    var runningCount = flights.filter(function(f){return computeStatus(f)==='active';}).length;
+    var soonEnd = flights.filter(function(f){ var d=dayDiff(f.end_date); return d!==null && d>=0 && d<=7 && computeStatus(f)!=='renewedClosed'; }).length;
+    var noBrief = flights.filter(function(f){return !f.is_brief_sent;}).length;
+    var noInvoice = flights.filter(function(f){return f.invoice_status==='not_issued' && todayStr()>=f.end_date;}).length;
+    var pendingPay = flights.filter(function(f){return f.payment_date && !f.is_paid;}).length;
+
+    var cards = [
+      ['合作中客戶數量', activeCount], ['執行中檔期數量', runningCount], ['7天內即將結束', soonEnd],
+      ['尚未發單數量', noBrief], ['尚未開立發票', noInvoice], ['待確認款項', pendingPay]
+    ];
+    var cardsHtml = '<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">' + cards.map(function(c){
+      return '<div class="bg-white border border-slate-200 rounded-xl p-4"><div class="text-2xl font-bold text-slate-800">' + c[1] + '</div><div class="text-xs text-slate-500 mt-1">' + c[0] + '</div></div>';
+    }).join('') + '</div>';
+
+    var todos = computeTodos();
+    var todosHtml = !todos.length
+      ? '<div class="text-sm text-slate-400 py-8 text-center">目前沒有待辦事項 🎉</div>'
+      : todos.map(function(t){
+          var camp = campaigns.find(function(c){return c.id===t.f.campaign_id;});
+          var cli = camp ? clients.find(function(c){return c.id===camp.client_id;}) : null;
+          return '<div class="flex items-center gap-3 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="tdOpenFlightModal(\'' + t.f.campaign_id + '\',\'' + t.f.id + '\')">' +
+            '<span class="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>' +
+            '<span class="text-sm">' + esc(t.label) + '</span>' +
+            '<span class="text-xs text-slate-400 ml-auto">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp?camp.name:'') + ' ／ ' + esc(mediaLabel(t.f)) + '</span>' +
+          '</div>';
+        }).join('');
+
+    return cardsHtml +
+      '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">' +
+        '<div class="px-4 py-3 border-b border-slate-200 font-semibold text-sm">今日待辦（' + todos.length + '）</div>' +
+        todosHtml +
+      '</div>';
+  }
+
+  function clientSummary(c){
+    var camps = campaignsOfClient(c.id);
+    var allFlights = [];
+    camps.forEach(function(camp){ flightsOfCampaign(camp.id).forEach(function(f){ allFlights.push(f); }); });
+    var running = allFlights.filter(function(f){return computeStatus(f)==='active';}).length;
+    var soon = allFlights.filter(function(f){var d=dayDiff(f.end_date); return d!==null && d>=0 && d<=7 && computeStatus(f)!=='renewedClosed';}).length;
+    var lastEnd = allFlights.map(function(f){return f.end_date;}).filter(Boolean).sort().slice(-1)[0];
+    return camps.length + ' 個產品案件 · ' + running + ' 個執行中檔期 · ' + soon + ' 個即將到期' + (lastEnd ? (' · 最近結束日：' + fmtDate(lastEnd)) : '');
+  }
+
+  function renderClients(){
+    var q = globalSearch.trim().toLowerCase();
+    var list = clients.filter(function(c){
+      if (!q) return true;
+      return (c.name + ' ' + (c.brand_name||'') + ' ' + (c.contact_name||'')).toLowerCase().indexOf(q) !== -1;
+    });
+    var html = '<div class="flex justify-between items-center mb-4">' +
+      '<div class="text-sm text-slate-500">共 ' + list.length + ' 個客戶</div>' +
+      '<button onclick="tdOpenClientModal()" class="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">＋ 新增客戶</button>' +
+    '</div>';
+    if (!list.length) return html + '<div class="text-sm text-slate-400 py-12 text-center bg-white border border-slate-200 rounded-xl">還沒有客戶，點右上角新增。</div>';
+
+    html += '<div class="space-y-3">';
+    list.forEach(function(c){
+      var expanded = !!expandedClients[c.id];
+      var st = CLIENT_STATUS[c.status] || CLIENT_STATUS.active;
+      html += '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">' +
+        '<div class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50" onclick="tdToggleClient(\'' + c.id + '\')">' +
+          '<span class="text-xs text-slate-400 w-3">' + (expanded?'▾':'▸') + '</span>' +
+          '<span class="font-semibold">' + esc(c.name) + '</span>' +
+          (c.brand_name ? '<span class="text-xs text-slate-400">' + esc(c.brand_name) + '</span>' : '') +
+          statusBadge(st) +
+          '<span class="text-xs text-slate-400 ml-2">' + clientSummary(c) + '</span>' +
+          '<div class="flex-1"></div>' +
+          '<button onclick="event.stopPropagation(); tdOpenCampaignModal(\'' + c.id + '\')" class="text-xs px-2 py-1 rounded border border-slate-200 hover:bg-slate-50">＋ 新增案件</button>' +
+          '<button onclick="event.stopPropagation(); tdOpenClientModal(\'' + c.id + '\')" class="text-xs px-2 py-1 rounded border border-slate-200 hover:bg-slate-50">編輯</button>' +
+          '<button onclick="event.stopPropagation(); tdDeleteClient(\'' + c.id + '\')" class="text-xs text-slate-300 hover:text-rose-500 px-1">✕</button>' +
+        '</div>';
+      if (expanded) {
+        var camps = campaignsOfClient(c.id);
+        html += '<div class="px-4 pb-4 space-y-3">';
+        if (!camps.length) html += '<div class="text-xs text-slate-400 py-3">還沒有產品／活動案件。</div>';
+        camps.forEach(function(camp){
+          var campExpanded = expandedCampaigns[camp.id] !== false; // default open
+          var fl = flightsOfCampaign(camp.id);
+          html += '<div class="border border-slate-100 rounded-lg bg-slate-50/60">' +
+            '<div class="flex items-center gap-2 px-3 py-2 cursor-pointer" onclick="tdToggleCampaign(\'' + camp.id + '\')">' +
+              '<span class="text-xs text-slate-400 w-3">' + (campExpanded?'▾':'▸') + '</span>' +
+              '<span class="text-sm font-semibold">' + esc(camp.name) + '</span>' +
+              (camp.product_name ? '<span class="text-xs text-slate-400">' + esc(camp.product_name) + '</span>' : '') +
+              '<div class="flex-1"></div>' +
+              '<div onclick="event.stopPropagation()">' + linkButtons(camp, 'campaign') + '</div>' +
+              '<button onclick="event.stopPropagation(); tdOpenFlightModal(\'' + camp.id + '\')" class="text-xs px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50">＋ 新增檔期</button>' +
+              '<button onclick="event.stopPropagation(); tdOpenCampaignModal(\'' + c.id + '\',\'' + camp.id + '\')" class="text-xs px-2 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50">編輯</button>' +
+              '<button onclick="event.stopPropagation(); tdDeleteCampaign(\'' + camp.id + '\')" class="text-xs text-slate-300 hover:text-rose-500 px-1">✕</button>' +
+            '</div>';
+          if (campExpanded) {
+            html += '<div class="px-3 pb-3 space-y-1.5">';
+            if (!fl.length) html += '<div class="text-xs text-slate-400 py-2">還沒有廣告檔期。</div>';
+            fl.forEach(function(f){ html += flightRow(f, false); });
+            html += '</div>';
+          }
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function renderCampaigns(){
+    var q = globalSearch.trim().toLowerCase();
+    var list = campaigns.filter(function(c){
+      if (!q) return true;
+      return (c.name + ' ' + (c.product_name||'')).toLowerCase().indexOf(q) !== -1;
+    });
+    var html = '<div class="text-sm text-slate-500 mb-4">共 ' + list.length + ' 個產品／活動案件</div>';
+    if (!list.length) return html + '<div class="text-sm text-slate-400 py-12 text-center bg-white border border-slate-200 rounded-xl">還沒有案件。</div>';
+    html += '<div class="space-y-2">';
+    list.forEach(function(camp){
+      var cli = clients.find(function(c){return c.id===camp.client_id;});
+      var fl = flightsOfCampaign(camp.id);
+      html += '<div class="bg-white border border-slate-200 rounded-xl px-4 py-3">' +
+        '<div class="flex items-center gap-2">' +
+          '<span class="font-semibold text-sm">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp.name) + '</span>' +
+          (camp.product_name ? '<span class="text-xs text-slate-400">' + esc(camp.product_name) + '</span>' : '') +
+          '<span class="text-xs text-slate-400">' + fl.length + ' 個檔期</span>' +
+          '<div class="flex-1"></div>' + linkButtons(camp, 'campaign') +
+        '</div></div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  var FLIGHT_CHIPS = [
+    ['all','全部'], ['today','今天要處理'], ['active','執行中'], ['upcoming','即將開始'],
+    ['soon7','7天內到期'], ['noBrief','尚未發單'], ['noInvoice','尚未開立發票'], ['unpaid','尚未收款'],
+    ['noLink','缺少雲端連結'], ['paused','暫停中']
+  ];
+  function flightMatchesChip(f, chip, st){
+    var d = dayDiff(f.end_date);
+    switch(chip){
+      case 'all': return true;
+      case 'today': return computeTodos().some(function(t){return t.f.id===f.id;});
+      case 'active': return st==='active';
+      case 'upcoming': return st==='upcoming';
+      case 'soon7': return d!==null && d>=0 && d<=7;
+      case 'noBrief': return !f.is_brief_sent;
+      case 'noInvoice': return f.invoice_status==='not_issued';
+      case 'unpaid': return !f.is_paid;
+      case 'noLink': return !f.report_link && !f.materials_link && !f.brief_link;
+      case 'paused': return st==='paused';
+      default: return true;
+    }
+  }
+  function renderFlights(){
+    var q = globalSearch.trim().toLowerCase();
+    var list = flights.filter(function(f){
+      var st = computeStatus(f);
+      if (!flightMatchesChip(f, flightFilterChip, st)) return false;
+      if (q) {
+        var camp = campaigns.find(function(c){return c.id===f.campaign_id;});
+        var cli = camp ? clients.find(function(c){return c.id===camp.client_id;}) : null;
+        var hay = ((cli?cli.name:'') + ' ' + (camp?camp.name:'') + ' ' + mediaLabel(f)).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
+    });
+    list.sort(function(a,b){ return a.start_date < b.start_date ? -1 : 1; });
+    var chipsHtml = '<div class="flex flex-wrap gap-1.5 mb-4">' + FLIGHT_CHIPS.map(function(c){
+      return '<button onclick="tdSetFlightFilter(\'' + c[0] + '\')" class="text-xs px-3 py-1.5 rounded-full border ' + (flightFilterChip===c[0] ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50') + '">' + c[1] + '</button>';
+    }).join('') + '</div>';
+    var listHtml = !list.length
+      ? '<div class="text-sm text-slate-400 py-12 text-center bg-white border border-slate-200 rounded-xl">沒有符合條件的檔期。</div>'
+      : '<div class="space-y-1.5">' + list.map(function(f){ return flightRow(f, true); }).join('') + '</div>';
+    return chipsHtml + listHtml;
+  }
+
+  function renderRenewals(){
+    var list = flights.filter(function(f){ var st=computeStatus(f); return st==='renewal' || st==='endingToday' || (f.renewal_result==='pending' && (dayDiff(f.end_date)||99)<=7); });
+    list.sort(function(a,b){ return a.end_date < b.end_date ? -1 : 1; });
+    if (!list.length) return '<div class="text-sm text-slate-400 py-12 text-center bg-white border border-slate-200 rounded-xl">目前沒有需要處理續約的檔期。</div>';
+    return '<div class="space-y-1.5">' + list.map(function(f){ return flightRow(f, true); }).join('') + '</div>';
+  }
+  function renderInvoicing(){
+    var list = flights.filter(function(f){ return f.invoice_status !== 'not_needed'; });
+    list.sort(function(a,b){ return a.end_date < b.end_date ? -1 : 1; });
+    var html = '<div class="space-y-1.5">';
+    if (!list.length) return '<div class="text-sm text-slate-400 py-12 text-center bg-white border border-slate-200 rounded-xl">目前沒有需要開票／請款的檔期。</div>';
+    list.forEach(function(f){
+      var camp = campaigns.find(function(c){return c.id===f.campaign_id;});
+      var cli = camp ? clients.find(function(c){return c.id===camp.client_id;}) : null;
+      html += '<div class="flex items-center gap-3 px-3 py-2.5 border border-slate-200 rounded-lg bg-white cursor-pointer hover:border-slate-300" onclick="tdOpenFlightModal(\'' + f.campaign_id + '\',\'' + f.id + '\')">' +
+        '<div class="w-40 shrink-0 truncate text-xs text-slate-500">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp?camp.name:'') + '</div>' +
+        '<div class="w-20 text-sm font-semibold">' + esc(mediaLabel(f)) + '</div>' +
+        '<span class="text-xs px-2 py-0.5 rounded-full ' + (f.invoice_status==='issued'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-500') + '">' + INVOICE_STATUS[f.invoice_status] + '</span>' +
+        '<span class="text-xs px-2 py-0.5 rounded-full ' + (f.is_paid?'bg-emerald-100 text-emerald-700':'bg-amber-100 text-amber-700') + '">' + (f.is_paid?'已收款':'未收款') + '</span>' +
+        '<div class="flex-1"></div>' +
+        '<div class="text-xs text-slate-400">' + (f.payment_method ? PAYMENT_METHODS[f.payment_method] : '—') + '</div>' +
+      '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+  function renderCloud(){
+    var rows = [];
+    campaigns.forEach(function(camp){
+      if (camp.folder_link || camp.materials_link || camp.brief_link) {
+        var cli = clients.find(function(c){return c.id===camp.client_id;});
+        rows.push('<div class="flex items-center gap-3 px-3 py-2.5 border border-slate-200 rounded-lg bg-white"><div class="text-sm w-56 truncate">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp.name) + '</div>' + linkButtons(camp,'campaign') + '</div>');
+      }
+    });
+    flights.forEach(function(f){
+      if (f.report_link || f.materials_link || f.brief_link) {
+        var camp = campaigns.find(function(c){return c.id===f.campaign_id;});
+        var cli = camp ? clients.find(function(c){return c.id===camp.client_id;}) : null;
+        rows.push('<div class="flex items-center gap-3 px-3 py-2.5 border border-slate-200 rounded-lg bg-white"><div class="text-sm w-56 truncate">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp?camp.name:'') + ' ／ ' + esc(mediaLabel(f)) + '</div>' + linkButtons(f,'flight') + '</div>');
+      }
+    });
+    if (!rows.length) return '<div class="text-sm text-slate-400 py-12 text-center bg-white border border-slate-200 rounded-xl">還沒有任何雲端連結。</div>';
+    return '<div class="space-y-1.5">' + rows.join('') + '</div>';
+  }
+  function renderArchive(){
+    var pausedClients = clients.filter(function(c){return c.status==='paused'||c.status==='ended';});
+    var pausedFlights = flights.filter(function(f){return computeStatus(f)==='paused';});
+    var html = '<div class="mb-6"><div class="text-sm font-semibold mb-2">暫停／已結束客戶</div>';
+    html += !pausedClients.length ? '<div class="text-xs text-slate-400">沒有暫停或已結束的客戶。</div>' :
+      '<div class="space-y-1.5">' + pausedClients.map(function(c){ return '<div class="px-3 py-2 border border-slate-200 rounded-lg bg-white text-sm">' + esc(c.name) + statusBadge(CLIENT_STATUS[c.status]) + '</div>'; }).join('') + '</div>';
+    html += '</div><div><div class="text-sm font-semibold mb-2">暫停中的檔期</div>';
+    html += !pausedFlights.length ? '<div class="text-xs text-slate-400">沒有暫停中的檔期。</div>' :
+      '<div class="space-y-1.5">' + pausedFlights.map(function(f){ return flightRow(f, true); }).join('') + '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  // ---------------- modals ----------------
+  function fieldHtml(label, inputHtml){ return '<div class="mb-3"><label class="block text-xs font-semibold text-slate-500 mb-1">' + label + '</label>' + inputHtml + '</div>'; }
+  function inputClass(){ return 'w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm'; }
+  function textInput(name, value){ return '<input name="' + name + '" value="' + esc(value||'') + '" class="' + inputClass() + '">'; }
+  function dateInput(name, value){ return '<input type="date" name="' + name + '" value="' + esc(value||'') + '" class="' + inputClass() + '">'; }
+  function numInput(name, value){ return '<input type="number" name="' + name + '" value="' + esc(value===null||value===undefined?'':value) + '" class="' + inputClass() + '">'; }
+  function textarea(name, value){ return '<textarea name="' + name + '" rows="2" class="' + inputClass() + '">' + esc(value||'') + '</textarea>'; }
+  function selectHtml(name, options, value, onchange){
+    return '<select name="' + name + '" class="' + inputClass() + '"' + (onchange?(' onchange="'+onchange+'"'):'') + '>' +
+      options.map(function(o){ return '<option value="' + o[0] + '"' + (o[0]===value?' selected':'') + '>' + o[1] + '</option>'; }).join('') + '</select>';
+  }
+  function checkboxHtml(name, checked, label){
+    return '<label class="flex items-center gap-2 text-sm"><input type="checkbox" name="' + name + '" ' + (checked?'checked':'') + '> ' + label + '</label>';
+  }
+
+  function renderClientModal(m){
+    var d = m.data;
+    return '<form onsubmit="tdSubmitClient(event)" class="p-5 overflow-y-auto flex-1">' +
+      '<div class="text-xs font-bold text-slate-400 uppercase mb-2">基本資料</div>' +
+      '<div class="grid grid-cols-2 gap-x-3">' +
+        fieldHtml('客戶名稱', textInput('name', d.name)) + fieldHtml('品牌名稱', textInput('brand_name', d.brand_name)) +
+        fieldHtml('公司名稱', textInput('company_name', d.company_name)) + fieldHtml('統一編號', textInput('tax_id', d.tax_id)) +
+        fieldHtml('主要聯絡人', textInput('contact_name', d.contact_name)) + fieldHtml('聯絡電話', textInput('contact_phone', d.contact_phone)) +
+        fieldHtml('Email', textInput('contact_email', d.contact_email)) + fieldHtml('負責顧問', textInput('advisor', d.advisor)) +
+        fieldHtml('合作服務項目', textInput('service_items', d.service_items)) + fieldHtml('常用媒體平台', textInput('common_media', d.common_media)) +
+        fieldHtml('合約開始日', dateInput('contract_start', d.contract_start)) + fieldHtml('合約結束日', dateInput('contract_end', d.contract_end)) +
+        fieldHtml('客戶狀態', selectHtml('status', Object.keys(CLIENT_STATUS).map(function(k){return [k, CLIENT_STATUS[k].label];}), d.status)) +
+      '</div>' +
+      fieldHtml('客戶備註', textarea('notes', d.notes)) + fieldHtml('交接注意事項', textarea('handover_notes', d.handover_notes)) +
+      '<div class="text-xs font-bold text-slate-400 uppercase mb-2 mt-4">財務預設資料</div>' +
+      '<div class="grid grid-cols-2 gap-x-3">' +
+        fieldHtml('預設請款方式', selectHtml('default_payment_method', Object.keys(PAYMENT_METHODS).map(function(k){return [k,PAYMENT_METHODS[k]];}), d.default_payment_method)) +
+        fieldHtml('預設付款條件', textInput('default_payment_terms', d.default_payment_terms)) +
+      '</div>' +
+      fieldHtml('預設發票資訊', textInput('default_invoice_info', d.default_invoice_info)) +
+      fieldHtml('財務備註', textarea('finance_notes', d.finance_notes)) +
+      '<div class="flex gap-2 mt-4 sticky bottom-0 bg-white pt-2">' +
+        '<button type="button" onclick="tdCloseModal()" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm">取消</button>' +
+        '<button type="submit" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">' + (m.mode==='edit'?'儲存':'建立客戶') + '</button>' +
+      '</div>' +
+    '</form>';
+  }
+  function renderCampaignModal(m){
+    var d = m.data;
+    var cli = clients.find(function(c){return c.id===m.clientId;});
+    return '<form onsubmit="tdSubmitCampaign(event)" class="p-5 overflow-y-auto flex-1">' +
+      '<div class="text-xs text-slate-400 mb-3">所屬客戶：<b class="text-slate-600">' + esc(cli?cli.name:'') + '</b></div>' +
+      fieldHtml('案件名稱', textInput('name', d.name)) + fieldHtml('產品／活動名稱', textInput('product_name', d.product_name)) +
+      '<div class="grid grid-cols-2 gap-x-3">' +
+        fieldHtml('活動目標', textInput('goal', d.goal)) + fieldHtml('預算', numInput('budget', d.budget)) +
+        fieldHtml('主要 KPI', textInput('kpi', d.kpi)) + fieldHtml('負責顧問', textInput('advisor', d.advisor)) +
+      '</div>' +
+      fieldHtml('內部協作人員', textInput('collaborators', d.collaborators)) +
+      fieldHtml('案件備註', textarea('notes', d.notes)) +
+      '<div class="text-xs font-bold text-slate-400 uppercase mb-2 mt-2">雲端連結</div>' +
+      fieldHtml('總資料夾連結', textInput('folder_link', d.folder_link)) +
+      fieldHtml('素材資料夾連結', textInput('materials_link', d.materials_link)) +
+      fieldHtml('需求單連結', textInput('brief_link', d.brief_link)) +
+      '<div class="flex gap-2 mt-4 sticky bottom-0 bg-white pt-2">' +
+        '<button type="button" onclick="tdCloseModal()" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm">取消</button>' +
+        '<button type="submit" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">' + (m.mode==='edit'?'儲存':'建立案件') + '</button>' +
+      '</div>' +
+    '</form>';
+  }
+  function renderFlightModal(m){
+    var d = m.data;
+    var camp = campaigns.find(function(c){return c.id===m.campaignId;});
+    var cli = camp ? clients.find(function(c){return c.id===camp.client_id;}) : null;
+    var pm = d.payment_method || (cli ? cli.default_payment_method : '');
+    return '<form onsubmit="tdSubmitFlight(event)" class="p-5 overflow-y-auto flex-1">' +
+      '<div class="text-xs text-slate-400 mb-3">所屬案件：<b class="text-slate-600">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp?camp.name:'') + '</b>' + (d.previous_flight_id ? ' <span class="text-indigo-500">（延續自上一檔）</span>' : '') + '</div>' +
+      '<div class="grid grid-cols-2 gap-x-3">' +
+        fieldHtml('媒體平台', selectHtml('media_platform', MEDIA_PRESETS.map(function(p){return [p,p];}), d.media_platform, 'tdOnMediaChange(this)')) +
+        fieldHtml('廣告帳戶', textInput('ad_account', d.ad_account)) +
+      '</div>' +
+      '<div id="td-custom-media-row" style="display:' + (d.media_platform==='其他'?'block':'none') + '">' + fieldHtml('自訂媒體名稱', textInput('custom_media_name', d.custom_media_name)) + '</div>' +
+      fieldHtml('廣告目標', textInput('ad_goal', d.ad_goal)) +
+      '<div class="grid grid-cols-2 gap-x-3">' +
+        fieldHtml('廣告開始日', dateInput('start_date', d.start_date)) + fieldHtml('廣告結束日', dateInput('end_date', d.end_date)) +
+        fieldHtml('廣告預算', numInput('budget', d.budget)) + fieldHtml('KPI', textInput('kpi', d.kpi)) +
+        fieldHtml('發單日期', dateInput('brief_sent_date', d.brief_sent_date)) +
+        fieldHtml('', checkboxHtml('is_brief_sent', d.is_brief_sent, '是否已發單')) +
+        fieldHtml('', checkboxHtml('is_live_confirmed', d.is_live_confirmed, '上線確認')) +
+      '</div>' +
+      '<div class="text-xs font-bold text-slate-400 uppercase mb-2 mt-2">發票與請款</div>' +
+      '<div class="grid grid-cols-2 gap-x-3">' +
+        fieldHtml('發票狀態', selectHtml('invoice_status', Object.keys(INVOICE_STATUS).map(function(k){return [k,INVOICE_STATUS[k]];}), d.invoice_status)) +
+        fieldHtml('發票日期', dateInput('invoice_date', d.invoice_date)) +
+        fieldHtml('發票號碼', textInput('invoice_number', d.invoice_number)) +
+        fieldHtml('請款方式', selectHtml('payment_method', Object.keys(PAYMENT_METHODS).map(function(k){return [k,PAYMENT_METHODS[k]];}), pm, 'tdOnPaymentMethodChange(this)')) +
+      '</div>' +
+      '<div id="td-pay-prepay" style="display:' + (pm==='prepay'?'block':'none') + '" class="grid grid-cols-2 gap-x-3 bg-slate-50 rounded-lg p-2 mb-2">' +
+        fieldHtml('預付款到期日', dateInput('prepay_due_date', d.prepay_due_date)) + fieldHtml('付款確認日期', dateInput('prepaid_confirm_date', d.prepaid_confirm_date)) +
+        fieldHtml('', checkboxHtml('is_prepaid', d.is_prepaid, '是否已付款')) +
+      '</div>' +
+      '<div id="td-pay-advance" style="display:' + (pm==='advance'?'block':'none') + '" class="grid grid-cols-2 gap-x-3 bg-slate-50 rounded-lg p-2 mb-2">' +
+        fieldHtml('代墊金額', numInput('advance_amount', d.advance_amount)) + fieldHtml('預計請款日', dateInput('expected_billing_date', d.expected_billing_date)) +
+        fieldHtml('實際請款日', dateInput('actual_billing_date', d.actual_billing_date)) + fieldHtml('', checkboxHtml('is_reimbursed', d.is_reimbursed, '是否已回款')) +
+      '</div>' +
+      '<div id="td-pay-monthly" style="display:' + (pm==='monthly'?'block':'none') + '" class="grid grid-cols-2 gap-x-3 bg-slate-50 rounded-lg p-2 mb-2">' +
+        fieldHtml('月結天數', numInput('monthly_terms_days', d.monthly_terms_days)) + fieldHtml('預計付款日', dateInput('expected_payment_date', d.expected_payment_date)) +
+      '</div>' +
+      '<div class="grid grid-cols-2 gap-x-3">' +
+        fieldHtml('請款日期', dateInput('payment_date', d.payment_date)) + fieldHtml('', checkboxHtml('is_paid', d.is_paid, '是否已收款')) +
+      '</div>' +
+      '<div class="text-xs font-bold text-slate-400 uppercase mb-2 mt-2">續約</div>' +
+      '<div class="grid grid-cols-2 gap-x-3">' +
+        fieldHtml('預計續約確認日', dateInput('expected_renewal_check_date', d.expected_renewal_check_date)) +
+        fieldHtml('', checkboxHtml('has_asked_renewal', d.has_asked_renewal, '是否已詢問續約')) +
+        fieldHtml('客戶續約結果', selectHtml('renewal_result', Object.keys(RENEWAL_RESULT).map(function(k){return [k,RENEWAL_RESULT[k]];}), d.renewal_result)) +
+      '</div>' +
+      '<div class="text-xs font-bold text-slate-400 uppercase mb-2 mt-2">雲端連結與備註</div>' +
+      fieldHtml('資料報表連結', textInput('report_link', d.report_link)) +
+      fieldHtml('素材連結', textInput('materials_link', d.materials_link)) +
+      fieldHtml('需求單連結', textInput('brief_link', d.brief_link)) +
+      fieldHtml('檔期備註', textarea('notes', d.notes)) +
+      '<div class="flex gap-2 mt-4 sticky bottom-0 bg-white pt-2">' +
+        '<button type="button" onclick="tdCloseModal()" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm">取消</button>' +
+        '<button type="submit" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">' + (m.mode==='edit'?'儲存':'建立檔期') + '</button>' +
+      '</div>' +
+    '</form>';
+  }
+
+  function renderModal(){
+    if (!modal) return '';
+    if (modal.type === 'menu') {
+      return '<div class="fixed inset-0 z-30" onclick="tdToggleMenu()"><div class="absolute top-14 right-4 bg-white border border-slate-200 rounded-lg shadow-lg w-56 overflow-hidden" onclick="event.stopPropagation()">' +
+        '<div class="px-3 py-2 text-xs text-slate-400 border-b border-slate-100 truncate">' + esc(currentUser?currentUser.email:'') + '</div>' +
+        '<button onclick="tdLogout()" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50">登出</button>' +
+      '</div></div>';
+    }
+    var title = { client:'客戶', campaign:'產品／活動案件', flight:'廣告檔期' }[modal.type];
+    var body = modal.type==='client' ? renderClientModal(modal) : modal.type==='campaign' ? renderCampaignModal(modal) : renderFlightModal(modal);
+    return '<div class="fixed inset-0 bg-slate-900/40 z-40 flex justify-end">' +
+      '<div class="w-full max-w-lg bg-white h-full flex flex-col">' +
+        '<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">' +
+          '<div class="font-semibold">' + (modal.mode==='edit'?'編輯':'新增') + title + '</div>' +
+          '<button onclick="tdCloseModal()" class="text-slate-400 hover:text-slate-600">✕</button>' +
+        '</div>' + body +
+      '</div>' +
+    '</div>';
+  }
+
+  // ---------------- top-level render ----------------
+  function renderConfigNeeded(){
+    document.getElementById('root').innerHTML = '<div class="h-screen flex items-center justify-center p-6"><div class="max-w-md bg-white border border-slate-200 rounded-xl p-6 text-sm leading-relaxed"><h2 class="font-bold text-base mb-2">還沒有連上資料庫</h2><p>請打開這個 HTML 檔案，設定區換成你自己 Supabase 專案的 URL 和 anon key。</p></div></div>';
+  }
+  function renderAuth(){
+    var isSignup = authMode === 'signup';
+    document.getElementById('root').innerHTML =
+      '<div class="h-screen flex items-center justify-center p-6"><div class="w-80 bg-white border border-slate-200 rounded-xl p-6">' +
+        '<h2 class="font-bold text-lg mb-1">客戶專案管理儀表板</h2>' +
+        '<div class="text-xs text-slate-400 mb-4">' + (isSignup?'建立帳號，資料只有你能看到。':'登入以繼續。') + '</div>' +
+        (authError ? '<div class="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">' + esc(authError) + '</div>' : '') +
+        (authInfo ? '<div class="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-3">' + esc(authInfo) + '</div>' : '') +
+        '<form onsubmit="tdAuthSubmit(event)">' +
+          fieldHtml('Email', '<input type="email" name="email" required class="' + inputClass() + '">') +
+          fieldHtml('密碼', '<input type="password" name="password" required minlength="6" class="' + inputClass() + '">') +
+          '<button type="submit" ' + (authBusy?'disabled':'') + ' class="w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold disabled:opacity-60">' + (authBusy?'處理中...':(isSignup?'註冊':'登入')) + '</button>' +
+        '</form>' +
+        '<div class="text-center text-xs text-slate-400 mt-3">' + (isSignup ? '已經有帳號？<button onclick="tdSetAuthMode(\'login\')" class="text-indigo-600 font-semibold underline">改用登入</button>' : '還沒有帳號？<button onclick="tdSetAuthMode(\'signup\')" class="text-indigo-600 font-semibold underline">建立一個</button>') + '</div>' +
+      '</div></div>';
+  }
+
+  function render(){
+    if (!configOk) { renderConfigNeeded(); return; }
+    if (!loaded) { document.getElementById('root').innerHTML = '<div class="h-screen flex items-center justify-center text-slate-400 text-sm">載入中...</div>'; return; }
+    if (!currentUser) { renderAuth(); return; }
+
+    var todos = computeTodos();
+    var sidebarHtml = '<aside class="w-56 bg-white border-r border-slate-200 flex flex-col shrink-0">' +
+      '<div class="h-14 flex items-center px-4 border-b border-slate-200 font-bold text-slate-800 text-sm">客戶專案管理</div>' +
+      '<nav class="flex-1 overflow-y-auto py-2">' + NAV.map(function(n){
+        var active = activeView === n.key;
+        return '<button onclick="tdSetView(\'' + n.key + '\')" class="w-full text-left px-4 py-2 text-sm flex items-center gap-2 ' + (active ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-2 border-indigo-600' : 'text-slate-600 hover:bg-slate-50') + '">' + n.label + (n.key==='dashboard' && todos.length ? '<span class="ml-auto text-xs bg-amber-100 text-amber-700 rounded-full px-1.5">' + todos.length + '</span>' : '') + '</button>';
+      }).join('') + '</nav>' +
+    '</aside>';
+
+    var viewTitle = NAV.find(function(n){return n.key===activeView;}).label;
+    var topbarHtml = '<header class="h-14 border-b border-slate-200 bg-white flex items-center gap-3 px-4 shrink-0">' +
+      '<div class="font-semibold text-sm mr-2">' + viewTitle + '</div>' +
+      '<input placeholder="全域搜尋：客戶、品牌、案件、媒體、聯絡人..." value="' + esc(globalSearch) + '" oninput="tdSetSearch(this.value)" class="flex-1 max-w-md px-3 py-1.5 border border-slate-200 rounded-lg text-sm">' +
+      '<button onclick="tdOpenClientModal()" class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50">＋客戶</button>' +
+      '<button onclick="tdSetView(\'clients\')" class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50">＋案件／檔期</button>' +
+      '<div class="relative"><button onclick="tdSetView(\'dashboard\')" class="text-sm px-2">🔔' + (todos.length?('<span class="text-xs align-super text-rose-500 font-bold">'+todos.length+'</span>'):'') + '</button></div>' +
+      '<button onclick="tdToggleMenu()" class="w-8 h-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">' + esc((currentUser.email||'?')[0].toUpperCase()) + '</button>' +
+    '</header>';
+
+    var mainHtml;
+    switch(activeView){
+      case 'dashboard': mainHtml = renderDashboard(); break;
+      case 'clients': mainHtml = renderClients(); break;
+      case 'campaigns': mainHtml = renderCampaigns(); break;
+      case 'flights': mainHtml = renderFlights(); break;
+      case 'renewals': mainHtml = renderRenewals(); break;
+      case 'invoicing': mainHtml = renderInvoicing(); break;
+      case 'cloud': mainHtml = renderCloud(); break;
+      case 'archive': mainHtml = renderArchive(); break;
+      default: mainHtml = '';
+    }
+
+    document.getElementById('root').innerHTML =
+      '<div class="h-screen flex overflow-hidden">' +
+        sidebarHtml +
+        '<div class="flex-1 flex flex-col overflow-hidden">' +
+          topbarHtml +
+          '<main class="flex-1 overflow-y-auto p-6">' + mainHtml + '</main>' +
+        '</div>' +
+      '</div>' + renderModal();
+  }
+
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && modal) tdCloseModal(); });
+
+  initAuth();
+})();
+</script>
+</body>
+</html>
