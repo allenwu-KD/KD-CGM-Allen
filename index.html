@@ -31,6 +31,7 @@
   var currentUser = null;
   var authMode = 'login';
   var authError = '', authInfo = '', authBusy = false;
+  var passwordRecoveryMode = false;
   var loaded = false;
 
   var clients = [], campaigns = [], flights = [], links = [];
@@ -292,16 +293,43 @@
     var res = await sb.auth.getSession();
     currentUser = res && res.data && res.data.session ? res.data.session.user : null;
     loaded = true; render();
-    if (currentUser) loadAll();
+    if (currentUser && !passwordRecoveryMode) loadAll();
     sb.auth.onAuthStateChange(function(event, session){
+      if (event === 'PASSWORD_RECOVERY') {
+        passwordRecoveryMode = true;
+        currentUser = session ? session.user : null;
+        render();
+        return;
+      }
       var hadUser = !!currentUser;
       currentUser = session ? session.user : null;
-      if (event === 'SIGNED_OUT') { clients=[]; campaigns=[]; flights=[]; links=[]; render(); return; }
-      if (!hadUser && currentUser) { loadAll(); return; }
+      if (event === 'SIGNED_OUT') { clients=[]; campaigns=[]; flights=[]; links=[]; passwordRecoveryMode=false; render(); return; }
+      if (!hadUser && currentUser && !passwordRecoveryMode) { loadAll(); return; }
       // 其他事件（例如切換視窗回來時 Supabase 自動刷新登入狀態）不重新載入、不重新渲染，
       // 避免把使用者正在填寫的表單資料整個沖掉。
     });
   }
+  window.tdSubmitNewPassword = async function(ev){
+    ev.preventDefault();
+    var f = ev.target;
+    var pw1 = f.password.value, pw2 = f.password2.value;
+    authError = '';
+    if (pw1.length < 6) { authError = '密碼至少需要 6 碼。'; render(); return; }
+    if (pw1 !== pw2) { authError = '兩次輸入的密碼不一致。'; render(); return; }
+    authBusy = true; render();
+    try {
+      var r = await sb.auth.updateUser({ password: pw1 });
+      if (r.error) throw r.error;
+      passwordRecoveryMode = false;
+      authBusy = false;
+      authInfo = '';
+      await loadAll();
+    } catch (e) {
+      authError = e.message || '設定密碼失敗，請再試一次。';
+      authBusy = false;
+      render();
+    }
+  };
   window.tdSetAuthMode = function(m){ authMode = m; authError=''; authInfo=''; render(); };
   window.tdAuthSubmit = async function(ev){
     ev.preventDefault();
@@ -1106,10 +1134,24 @@
         '<div class="text-center text-xs text-slate-400 mt-3">' + (isSignup ? '已經有帳號？<button onclick="tdSetAuthMode(\'login\')" class="text-indigo-600 font-semibold underline">改用登入</button>' : '還沒有帳號？<button onclick="tdSetAuthMode(\'signup\')" class="text-indigo-600 font-semibold underline">建立一個</button>') + '</div>' +
       '</div></div>';
   }
+  function renderSetNewPassword(){
+    document.getElementById('root').innerHTML =
+      '<div class="h-screen flex items-center justify-center p-6"><div class="w-80 bg-white border border-slate-200 rounded-xl p-6">' +
+        '<h2 class="font-bold text-lg mb-1">設定新密碼</h2>' +
+        '<div class="text-xs text-slate-400 mb-4">請輸入你要使用的新密碼。</div>' +
+        (authError ? '<div class="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">' + esc(authError) + '</div>' : '') +
+        '<form onsubmit="tdSubmitNewPassword(event)">' +
+          fieldHtml('新密碼', '<input type="password" name="password" required minlength="6" class="' + inputClass() + '">') +
+          fieldHtml('再輸入一次', '<input type="password" name="password2" required minlength="6" class="' + inputClass() + '">') +
+          '<button type="submit" ' + (authBusy?'disabled':'') + ' class="w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold disabled:opacity-60">' + (authBusy?'處理中...':'設定新密碼並登入') + '</button>' +
+        '</form>' +
+      '</div></div>';
+  }
 
   function render(){
     if (!configOk) { renderConfigNeeded(); return; }
     if (!loaded) { document.getElementById('root').innerHTML = '<div class="h-screen flex items-center justify-center text-slate-400 text-sm">載入中...</div>'; return; }
+    if (passwordRecoveryMode) { renderSetNewPassword(); return; }
     if (!currentUser) { renderAuth(); return; }
 
     var todos = computeTodos();
