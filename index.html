@@ -28,10 +28,6 @@
   var configOk = SUPABASE_URL.indexOf('PASTE_YOUR') === -1 && SUPABASE_ANON_KEY.indexOf('PASTE_YOUR') === -1;
   var sb = configOk ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
-  var currentUser = null;
-  var authMode = 'login';
-  var authError = '', authInfo = '', authBusy = false;
-  var passwordRecoveryMode = false;
   var loaded = false;
 
   var clients = [], campaigns = [], flights = [], links = [];
@@ -44,7 +40,6 @@
   var flightFilterChip = 'all';
   var modal = null;
   var modal_editing_id = null;
-  var menuOpen = false;
   var openMenu = null;
   var openMenuPos = null;
   var viewOnlyActive = false;
@@ -290,64 +285,8 @@
   // ---------------- auth ----------------
   async function initAuth(){
     if (!configOk) { loaded = true; render(); return; }
-    var res = await sb.auth.getSession();
-    currentUser = res && res.data && res.data.session ? res.data.session.user : null;
-    loaded = true; render();
-    if (currentUser && !passwordRecoveryMode) loadAll();
-    sb.auth.onAuthStateChange(function(event, session){
-      if (event === 'PASSWORD_RECOVERY') {
-        passwordRecoveryMode = true;
-        currentUser = session ? session.user : null;
-        render();
-        return;
-      }
-      var hadUser = !!currentUser;
-      currentUser = session ? session.user : null;
-      if (event === 'SIGNED_OUT') { clients=[]; campaigns=[]; flights=[]; links=[]; passwordRecoveryMode=false; render(); return; }
-      if (!hadUser && currentUser && !passwordRecoveryMode) { loadAll(); return; }
-      // 其他事件（例如切換視窗回來時 Supabase 自動刷新登入狀態）不重新載入、不重新渲染，
-      // 避免把使用者正在填寫的表單資料整個沖掉。
-    });
+    await loadAll();
   }
-  window.tdSubmitNewPassword = async function(ev){
-    ev.preventDefault();
-    var f = ev.target;
-    var pw1 = f.password.value, pw2 = f.password2.value;
-    authError = '';
-    if (pw1.length < 6) { authError = '密碼至少需要 6 碼。'; render(); return; }
-    if (pw1 !== pw2) { authError = '兩次輸入的密碼不一致。'; render(); return; }
-    authBusy = true; render();
-    try {
-      var r = await sb.auth.updateUser({ password: pw1 });
-      if (r.error) throw r.error;
-      passwordRecoveryMode = false;
-      authBusy = false;
-      authInfo = '';
-      await loadAll();
-    } catch (e) {
-      authError = e.message || '設定密碼失敗，請再試一次。';
-      authBusy = false;
-      render();
-    }
-  };
-  window.tdSetAuthMode = function(m){ authMode = m; authError=''; authInfo=''; render(); };
-  window.tdAuthSubmit = async function(ev){
-    ev.preventDefault();
-    var f = ev.target, email = f.email.value.trim(), password = f.password.value;
-    authError=''; authInfo=''; authBusy=true; render();
-    try {
-      if (authMode === 'signup') {
-        var r1 = await sb.auth.signUp({ email: email, password: password });
-        if (r1.error) throw r1.error;
-        if (!(r1.data && r1.data.session)) { authInfo = '註冊成功！如果專案有開啟信箱驗證，請先去收信確認，再回來登入。'; authMode = 'login'; }
-      } else {
-        var r2 = await sb.auth.signInWithPassword({ email: email, password: password });
-        if (r2.error) throw r2.error;
-      }
-    } catch (e) { authError = e.message || '發生錯誤'; }
-    authBusy = false; render();
-  };
-  window.tdLogout = async function(){ await sb.auth.signOut(); };
 
   // ---------------- data ----------------
   async function loadAll(){
@@ -374,7 +313,6 @@
   window.tdToggleClient = function(id){ expandedClients[id] = !expandedClients[id]; render(); };
   window.tdToggleCampaign = function(id){ expandedCampaigns[id] = !expandedCampaigns[id]; render(); };
   window.tdSetFlightFilter = function(k){ flightFilterChip = k; render(); };
-  window.tdToggleMenu = function(){ menuOpen = !menuOpen; render(); };
   window.tdCloseModal = function(){ modal = null; modal_editing_id = null; render(); };
 
   // ---- client CRUD ----
@@ -1118,41 +1056,10 @@
   function renderConfigNeeded(){
     document.getElementById('root').innerHTML = '<div class="h-screen flex items-center justify-center p-6"><div class="max-w-md bg-white border border-slate-200 rounded-xl p-6 text-sm leading-relaxed"><h2 class="font-bold text-base mb-2">還沒有連上資料庫</h2><p>請打開這個 HTML 檔案，設定區換成你自己 Supabase 專案的 URL 和 anon key。</p></div></div>';
   }
-  function renderAuth(){
-    var isSignup = authMode === 'signup';
-    document.getElementById('root').innerHTML =
-      '<div class="h-screen flex items-center justify-center p-6"><div class="w-80 bg-white border border-slate-200 rounded-xl p-6">' +
-        '<h2 class="font-bold text-lg mb-1">客戶專案管理儀表板</h2>' +
-        '<div class="text-xs text-slate-400 mb-4">' + (isSignup?'建立帳號，資料只有你能看到。':'登入以繼續。') + '</div>' +
-        (authError ? '<div class="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">' + esc(authError) + '</div>' : '') +
-        (authInfo ? '<div class="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 mb-3">' + esc(authInfo) + '</div>' : '') +
-        '<form onsubmit="tdAuthSubmit(event)">' +
-          fieldHtml('Email', '<input type="email" name="email" required class="' + inputClass() + '">') +
-          fieldHtml('密碼', '<input type="password" name="password" required minlength="6" class="' + inputClass() + '">') +
-          '<button type="submit" ' + (authBusy?'disabled':'') + ' class="w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold disabled:opacity-60">' + (authBusy?'處理中...':(isSignup?'註冊':'登入')) + '</button>' +
-        '</form>' +
-        '<div class="text-center text-xs text-slate-400 mt-3">' + (isSignup ? '已經有帳號？<button onclick="tdSetAuthMode(\'login\')" class="text-indigo-600 font-semibold underline">改用登入</button>' : '還沒有帳號？<button onclick="tdSetAuthMode(\'signup\')" class="text-indigo-600 font-semibold underline">建立一個</button>') + '</div>' +
-      '</div></div>';
-  }
-  function renderSetNewPassword(){
-    document.getElementById('root').innerHTML =
-      '<div class="h-screen flex items-center justify-center p-6"><div class="w-80 bg-white border border-slate-200 rounded-xl p-6">' +
-        '<h2 class="font-bold text-lg mb-1">設定新密碼</h2>' +
-        '<div class="text-xs text-slate-400 mb-4">請輸入你要使用的新密碼。</div>' +
-        (authError ? '<div class="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2 mb-3">' + esc(authError) + '</div>' : '') +
-        '<form onsubmit="tdSubmitNewPassword(event)">' +
-          fieldHtml('新密碼', '<input type="password" name="password" required minlength="6" class="' + inputClass() + '">') +
-          fieldHtml('再輸入一次', '<input type="password" name="password2" required minlength="6" class="' + inputClass() + '">') +
-          '<button type="submit" ' + (authBusy?'disabled':'') + ' class="w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold disabled:opacity-60">' + (authBusy?'處理中...':'設定新密碼並登入') + '</button>' +
-        '</form>' +
-      '</div></div>';
-  }
 
   function render(){
     if (!configOk) { renderConfigNeeded(); return; }
     if (!loaded) { document.getElementById('root').innerHTML = '<div class="h-screen flex items-center justify-center text-slate-400 text-sm">載入中...</div>'; return; }
-    if (passwordRecoveryMode) { renderSetNewPassword(); return; }
-    if (!currentUser) { renderAuth(); return; }
 
     var todos = computeTodos();
     var sidebarHtml = '<aside class="w-56 bg-white border-r border-slate-200 flex flex-col shrink-0">' +
@@ -1170,11 +1077,6 @@
       '<button onclick="tdOpenClientModal()" class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50">＋客戶</button>' +
       '<button onclick="tdSetView(\'clients\')" class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50">＋案件／檔期</button>' +
       '<div class="relative"><button onclick="tdSetView(\'dashboard\')" class="text-sm px-2">🔔' + (todos.length?('<span class="text-xs align-super text-rose-500 font-bold">'+todos.length+'</span>'):'') + '</button></div>' +
-      '<button onclick="tdToggleMenu()" class="w-8 h-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center">' + esc((currentUser.email||'?')[0].toUpperCase()) + '</button>' +
-      (menuOpen ? '<div class="fixed inset-0 z-30" onclick="tdToggleMenu()"><div class="absolute top-14 right-4 bg-white border border-slate-200 rounded-lg shadow-lg w-56 overflow-hidden" onclick="event.stopPropagation()">' +
-        '<div class="px-3 py-2 text-xs text-slate-400 border-b border-slate-100 truncate">' + esc(currentUser.email||'') + '</div>' +
-        '<button onclick="tdLogout()" class="w-full text-left px-3 py-2 text-sm hover:bg-slate-50">登出</button>' +
-      '</div></div>' : '') +
     '</header>';
 
     var mainHtml;
