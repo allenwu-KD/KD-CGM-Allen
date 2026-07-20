@@ -53,7 +53,7 @@
     { key: 'campaigns', label: '產品／活動案件' },
     { key: 'flights', label: '廣告檔期' },
     { key: 'dueSoon', label: '即將到期' },
-    { key: 'archive', label: '已結束案件' }
+    { key: 'archive', label: '已結束檔期' }
   ];
 
   var CLIENT_STATUS = {
@@ -430,7 +430,8 @@
       billing_submitted: f.billing_submitted.checked,
       billing_submitted_date: f.billing_submitted.checked ? (f.billing_submitted_date.value || null) : null,
       payment_received: f.payment_received.checked,
-      payment_received_date: f.payment_received.checked ? (f.payment_received_date.value || null) : null
+      payment_received_date: f.payment_received.checked ? (f.payment_received_date.value || null) : null,
+      notes: f.notes.value.trim()
     };
     if (!payload.start_date) return;
     var editId = modal_editing_id;
@@ -461,7 +462,6 @@
     var items = [
       ['查看／編輯檔期', "tdToggleActionMenu('" + key + "'); tdOpenFlightModal('" + f.campaign_id + "','" + f.id + "')"],
       ['新增連結', "tdToggleActionMenu('" + key + "'); tdOpenLinkModal('flight','" + f.id + "')"],
-      ['編輯重點事項', "tdToggleActionMenu('" + key + "'); tdOpenFlightNotesEditor('" + f.id + "')"],
       ['複製檔期', "tdToggleActionMenu('" + key + "'); tdOpenFlightModal('" + f.campaign_id + "', null, '" + f.id + "')"],
       ['刪除檔期', "tdToggleActionMenu('" + key + "'); tdDeleteFlight('" + f.id + "')", 'text-rose-500']
     ];
@@ -573,19 +573,10 @@
 
   function flightNotesHtml(f){
     var raw = (f.notes || '').trim();
-    var expanded = !!expandedFlightNotes[f.id];
-    if (!raw && !expanded) return '';
-    if (!raw && expanded) {
-      return '<div class="mt-2 bg-amber-50 border border-amber-100 rounded-lg p-2.5 text-xs text-amber-800" onclick="event.stopPropagation()">' +
-        '<div class="font-semibold mb-1">新增重點事項</div>' +
-        '<form onsubmit="tdSubmitFlightNotes(event, \'' + f.id + '\')" class="flex gap-2">' +
-          '<textarea name="notes" rows="2" class="flex-1 px-2 py-1 border border-amber-200 rounded-lg text-xs bg-white" placeholder="每行一點，或直接寫一段話..."></textarea>' +
-          '<button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs h-fit self-end">儲存</button>' +
-        '</form>' +
-      '</div>';
-    }
+    if (!raw) return '';
     var lines = raw.split('\n').map(function(s){return s.trim();}).filter(Boolean);
     var isList = lines.length > 1;
+    var expanded = !!expandedFlightNotes[f.id];
     var inner = isList
       ? '<ul class="list-disc pl-4 space-y-0.5">' + lines.map(function(l){return '<li>'+esc(l)+'</li>';}).join('') + '</ul>'
       : '<p>' + esc(raw) + '</p>';
@@ -596,20 +587,9 @@
         '<button onclick="tdToggleFlightNotes(\'' + f.id + '\')" class="text-amber-700 underline hover:text-amber-900">' + (expanded?'收合內容':'展開全文') + '</button>' +
       '</div>' +
       '<div' + clampStyle + '>' + inner + '</div>' +
-      (expanded ? '<form onsubmit="tdSubmitFlightNotes(event, \'' + f.id + '\')" class="mt-2 flex gap-2">' +
-        '<textarea name="notes" rows="2" class="flex-1 px-2 py-1 border border-amber-200 rounded-lg text-xs bg-white">' + esc(raw) + '</textarea>' +
-        '<button type="submit" class="px-3 py-1 rounded-lg bg-indigo-600 text-white text-xs h-fit self-end">儲存</button>' +
-      '</form>' : '') +
     '</div>';
   }
   window.tdToggleFlightNotes = function(id){ expandedFlightNotes[id] = !expandedFlightNotes[id]; render(); };
-  window.tdOpenFlightNotesEditor = function(id){ expandedFlightNotes[id] = true; render(); };
-  window.tdSubmitFlightNotes = async function(ev, id){
-    ev.preventDefault();
-    var val = ev.target.notes.value;
-    await sb.from('ad_flights').update({ notes: val }).eq('id', id);
-    await loadAll();
-  };
   window.tdExpandAllClients = function(){
     clients.forEach(function(c){ expandedClients[c.id] = true; });
     campaigns.forEach(function(c){ expandedCampaigns[c.id] = true; });
@@ -676,7 +656,8 @@
         if (!camps.length) html += '<div class="text-xs text-slate-400 py-3">還沒有產品／活動案件。</div>';
         camps.forEach(function(camp){
           var campExpanded = expandedCampaigns.hasOwnProperty(camp.id) ? expandedCampaigns[camp.id] : campaignHasActivity(camp.id);
-          var fl = flightsOfCampaign(camp.id);
+          var allFl = flightsOfCampaign(camp.id);
+          var fl = allFl.filter(function(f){ return computeStatus(f) !== 'ended'; });
           var kkey = 'campaign:' + camp.id;
           var kitems = [
             ['編輯', "tdToggleActionMenu('" + kkey + "'); tdOpenCampaignModal('" + c.id + "','" + camp.id + "')"],
@@ -695,7 +676,11 @@
             '</div>';
           if (campExpanded) {
             html += '<div class="px-3 pb-3 space-y-1.5">';
-            if (!fl.length) html += '<div class="text-xs text-slate-400 py-2">還沒有廣告檔期。</div>';
+            if (!fl.length) {
+              html += allFl.length
+                ? '<div class="text-xs text-slate-400 py-2">此案件的檔期都已結束，可在「已結束檔期」頁面查看。</div>'
+                : '<div class="text-xs text-slate-400 py-2">還沒有廣告檔期。</div>';
+            }
             fl.forEach(function(f){ html += flightRow(f, false); });
             html += '</div>';
           }
@@ -982,7 +967,10 @@
       checkboxHtml('billing_submitted', d.billing_submitted, '是否已送出請款', 'tdOnBillingSubmittedChange(this)') +
       '<div id="td-billing-date-row" class="mt-2 mb-3" style="display:' + (d.billing_submitted?'block':'none') + '">' + fieldHtml('送出請款日期', dateInput('billing_submitted_date', d.billing_submitted_date)) + '</div>' +
       checkboxHtml('payment_received', d.payment_received, '是否已收款', 'tdOnPaymentReceivedChange(this)') +
-      '<div id="td-payment-date-row" class="mt-2" style="display:' + (d.payment_received?'block':'none') + '">' + fieldHtml('收款日期', dateInput('payment_received_date', d.payment_received_date)) + '</div>' +
+      '<div id="td-payment-date-row" class="mt-2 mb-3" style="display:' + (d.payment_received?'block':'none') + '">' + fieldHtml('收款日期', dateInput('payment_received_date', d.payment_received_date)) + '</div>' +
+
+      '<div class="text-xs font-bold text-slate-400 uppercase mb-2 mt-4">重點事項</div>' +
+      fieldHtml('', '<textarea name="notes" rows="3" class="' + inputClass() + '" placeholder="每行一點，或直接寫一段話...">' + esc(d.notes||'') + '</textarea>') +
 
       '<div class="flex gap-2 mt-4 sticky bottom-0 bg-white pt-2">' +
         '<button type="button" onclick="tdCloseModal()" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm">取消</button>' +
