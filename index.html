@@ -523,6 +523,24 @@
       '</div>';
   }
 
+  var CLIENT_COLORS = [
+    { border: 'border-l-blue-400', avatar: 'bg-blue-500' },
+    { border: 'border-l-emerald-400', avatar: 'bg-emerald-500' },
+    { border: 'border-l-amber-400', avatar: 'bg-amber-500' },
+    { border: 'border-l-rose-400', avatar: 'bg-rose-500' },
+    { border: 'border-l-violet-400', avatar: 'bg-violet-500' },
+    { border: 'border-l-cyan-400', avatar: 'bg-cyan-500' },
+    { border: 'border-l-orange-400', avatar: 'bg-orange-500' },
+    { border: 'border-l-pink-400', avatar: 'bg-pink-500' },
+    { border: 'border-l-teal-400', avatar: 'bg-teal-500' },
+    { border: 'border-l-indigo-400', avatar: 'bg-indigo-500' }
+  ];
+  function clientColor(clientId){
+    var sum = 0;
+    for (var i = 0; i < clientId.length; i++) sum += clientId.charCodeAt(i);
+    return CLIENT_COLORS[sum % CLIENT_COLORS.length];
+  }
+
   function campaignHasActivity(campId){
     return flightsOfCampaign(campId).some(function(f){ return computeStatus(f) !== 'ended'; });
   }
@@ -617,9 +635,11 @@
         ['標記為已結束', "tdToggleActionMenu('" + ckey + "'); tdMarkClientEnded('" + c.id + "')"],
         ['刪除客戶', "tdToggleActionMenu('" + ckey + "'); tdDeleteClient('" + c.id + "')", 'text-rose-500']
       ];
-      html += '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">' +
+      var cc = clientColor(c.id);
+      html += '<div class="bg-white border border-slate-200 border-l-4 ' + cc.border + ' rounded-xl overflow-hidden">' +
         '<div class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50" onclick="tdToggleClient(\'' + c.id + '\')">' +
           '<span class="text-xs text-slate-400 w-3">' + (expanded?'▾':'▸') + '</span>' +
+          '<span class="w-6 h-6 rounded-full ' + cc.avatar + ' text-white text-xs font-bold flex items-center justify-center shrink-0">' + esc((c.name||'?').charAt(0).toUpperCase()) + '</span>' +
           '<span class="font-semibold">' + esc(c.name) + '</span>' +
           statusBadge(st) +
           '<div class="flex-1"></div>' +
