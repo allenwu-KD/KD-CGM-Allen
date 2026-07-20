@@ -35,8 +35,7 @@
   var globalSearch = '';
   var expandedClients = {};
   var expandedCampaigns = {};
-  var expandedNotes = {};
-  var expandedFlightNotes = {};
+  var expandedNotesMap = {};
   var flightFilterChip = 'all';
   var modal = null;
   var modal_editing_id = null;
@@ -466,7 +465,7 @@
       ['刪除檔期', "tdToggleActionMenu('" + key + "'); tdDeleteFlight('" + f.id + "')", 'text-rose-500']
     ];
     var stMeta = FLIGHT_STATUS[computeStatus(f)];
-    var notesHtml = flightNotesHtml(f);
+    var notesHtml = notesBlockHtml('flight', f.id, f.notes, '重點事項');
     return (
       '<div class="border border-slate-200 rounded-lg bg-white hover:border-slate-300 cursor-pointer" onclick="tdOpenFlightModal(\'' + f.campaign_id + '\',\'' + f.id + '\')">' +
         '<div class="flex items-center gap-3 px-3 py-2.5">' +
@@ -551,45 +550,26 @@
     }
     return '';
   }
-  function handoverNotesHtml(c){
-    var raw = (c.handover_notes || '').trim();
+  function notesBlockHtml(kind, id, raw, titleLabel){
+    raw = (raw || '').trim();
     if (!raw) return '';
+    var key = kind + ':' + id;
     var lines = raw.split('\n').map(function(s){return s.trim();}).filter(Boolean);
     var isList = lines.length > 1;
-    var expanded = !!expandedNotes[c.id];
-    var inner = isList
-      ? '<ul class="list-disc pl-4 space-y-0.5">' + lines.map(function(l){return '<li>'+esc(l)+'</li>';}).join('') + '</ul>'
-      : '<p>' + esc(raw) + '</p>';
-    var clampStyle = expanded ? '' : ' style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;"';
-    return '<div class="text-xs bg-amber-50 border border-amber-100 text-amber-800 rounded-lg px-3 py-2">' +
-      '<div class="flex items-center gap-2 mb-1">' +
-        '<b>交接重點' + (isList ? '（' + lines.length + '）' : '') + '</b>' +
-        '<button onclick="event.stopPropagation(); tdToggleNotes(\'' + c.id + '\')" class="text-amber-700 underline hover:text-amber-900">' + (expanded?'收合內容':'展開全文') + '</button>' +
-      '</div>' +
-      '<div' + clampStyle + '>' + inner + '</div>' +
-    '</div>';
-  }
-  window.tdToggleNotes = function(id){ expandedNotes[id] = !expandedNotes[id]; render(); };
-
-  function flightNotesHtml(f){
-    var raw = (f.notes || '').trim();
-    if (!raw) return '';
-    var lines = raw.split('\n').map(function(s){return s.trim();}).filter(Boolean);
-    var isList = lines.length > 1;
-    var expanded = !!expandedFlightNotes[f.id];
+    var expanded = !!expandedNotesMap[key];
     var inner = isList
       ? '<ul class="list-disc pl-4 space-y-0.5">' + lines.map(function(l){return '<li>'+esc(l)+'</li>';}).join('') + '</ul>'
       : '<p>' + esc(raw) + '</p>';
     var clampStyle = expanded ? '' : ' style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;"';
     return '<div class="mt-2 bg-amber-50 border border-amber-100 rounded-lg p-2.5 text-xs text-amber-800" onclick="event.stopPropagation()">' +
       '<div class="flex items-center gap-2 mb-1">' +
-        '<b>重點事項' + (isList ? '（' + lines.length + '）' : '') + '</b>' +
-        '<button onclick="tdToggleFlightNotes(\'' + f.id + '\')" class="text-amber-700 underline hover:text-amber-900">' + (expanded?'收合內容':'展開全文') + '</button>' +
+        '<b>' + titleLabel + (isList ? '（' + lines.length + '）' : '') + '</b>' +
+        '<button onclick="tdToggleNotesBlock(\'' + key + '\')" class="text-amber-700 hover:text-amber-900 hover:bg-amber-100 rounded w-5 h-5 flex items-center justify-center leading-none shrink-0" title="' + (expanded?'收合':'展開') + '">' + (expanded?'▴':'▾') + '</button>' +
       '</div>' +
       '<div' + clampStyle + '>' + inner + '</div>' +
     '</div>';
   }
-  window.tdToggleFlightNotes = function(id){ expandedFlightNotes[id] = !expandedFlightNotes[id]; render(); };
+  window.tdToggleNotesBlock = function(key){ expandedNotesMap[key] = !expandedNotesMap[key]; render(); };
   window.tdExpandAllClients = function(){
     clients.forEach(function(c){ expandedClients[c.id] = true; });
     campaigns.forEach(function(c){ expandedCampaigns[c.id] = true; });
@@ -648,7 +628,7 @@
         '</div>';
       if (expanded) {
         html += '<div class="px-4 pb-3 pt-1 space-y-2">' +
-          handoverNotesHtml(c) +
+          notesBlockHtml('client', c.id, c.handover_notes, '交接重點') +
           '<div onclick="event.stopPropagation()">' + linksSectionHtml('client', c.id, true) + '</div>' +
         '</div>';
         var camps = campaignsOfClient(c.id);
@@ -675,6 +655,8 @@
               '<div onclick="event.stopPropagation()" class="shrink-0">' + actionsButtonHtml(kkey, kitems) + '</div>' +
             '</div>';
           if (campExpanded) {
+            var campNotesBlock = notesBlockHtml('campaign', camp.id, camp.notes, '重點事項');
+            if (campNotesBlock) html += '<div class="px-3 pb-2">' + campNotesBlock + '</div>';
             html += '<div class="px-3 pb-3 space-y-1.5">';
             if (!fl.length) {
               html += allFl.length
@@ -912,7 +894,7 @@
       '<div class="grid grid-cols-2 gap-x-3">' +
         fieldHtml('負責人', textInput('advisor', d.advisor)) + fieldHtml('建立日期', dateInput('created_at', d.created_at)) +
       '</div>' +
-      fieldHtml('案件備註', textarea('notes', d.notes)) +
+      fieldHtml('重點事項', '<textarea name="notes" rows="3" class="' + inputClass() + '" placeholder="每行一點，或直接寫一段話...">' + esc(d.notes||'') + '</textarea>') +
       '<div class="flex gap-2 mt-4 sticky bottom-0 bg-white pt-2">' +
         '<button type="button" onclick="tdCloseModal()" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm">取消</button>' +
         '<button type="submit" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">' + (m.mode==='edit'?'儲存':'建立案件') + '</button>' +
