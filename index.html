@@ -42,6 +42,7 @@
   var openMenu = null;
   var openMenuPos = null;
   var viewOnlyActive = false;
+  var reorderMode = false;
   var viewOnlyTodo = false;
 
   var archiveYear = 'all', archiveMonth = 'all', archiveClient = 'all', archiveMedia = 'all', archiveSearch = '';
@@ -291,7 +292,7 @@
   // ---------------- data ----------------
   async function loadAll(){
     loaded = false; render();
-    var res = await sb.from('clients').select('*, campaigns(*, ad_flights(*))').order('created_at', { ascending: true });
+    var res = await sb.from('clients').select('*, campaigns(*, ad_flights(*))').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
     var linksRes = await sb.from('links').select('*');
     if (!res.error && res.data) {
       clients = res.data.map(function(c){ var copy = Object.assign({}, c); delete copy.campaigns; return copy; });
@@ -608,6 +609,29 @@
     if (kind === 'todo') viewOnlyTodo = !viewOnlyTodo;
     render();
   };
+  window.tdToggleReorderMode = function(){ reorderMode = !reorderMode; render(); };
+  window.tdDragStart = function(ev, id){
+    ev.dataTransfer.setData('text/plain', id);
+    ev.dataTransfer.effectAllowed = 'move';
+  };
+  window.tdDragOver = function(ev){ ev.preventDefault(); };
+  window.tdDropReorder = async function(ev, targetId){
+    ev.preventDefault();
+    var sourceId = ev.dataTransfer.getData('text/plain');
+    if (!sourceId || sourceId === targetId) return;
+    var arr = clients.slice();
+    var fromIdx = arr.findIndex(function(c){ return c.id === sourceId; });
+    var toIdx = arr.findIndex(function(c){ return c.id === targetId; });
+    if (fromIdx < 0 || toIdx < 0) return;
+    var moved = arr.splice(fromIdx, 1)[0];
+    arr.splice(toIdx, 0, moved);
+    clients = arr;
+    render();
+    for (var i = 0; i < arr.length; i++) {
+      await sb.from('clients').update({ sort_order: i }).eq('id', arr[i].id);
+    }
+    await loadAll();
+  };
 
   function renderClients(){
     var q = globalSearch.trim().toLowerCase();
@@ -623,6 +647,7 @@
       '<button onclick="tdCollapseAllClients()" class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50">全部收合</button>' +
       '<button onclick="tdToggleViewFilter(\'active\')" class="text-xs px-3 py-1.5 rounded-full border ' + (viewOnlyActive?'bg-slate-800 text-white border-slate-800':'border-slate-200 hover:bg-slate-50') + '">只看有執行中檔期</button>' +
       '<button onclick="tdToggleViewFilter(\'todo\')" class="text-xs px-3 py-1.5 rounded-full border ' + (viewOnlyTodo?'bg-slate-800 text-white border-slate-800':'border-slate-200 hover:bg-slate-50') + '">只看有待辦事項</button>' +
+      '<button onclick="tdToggleReorderMode()" class="text-xs px-3 py-1.5 rounded-full border ' + (reorderMode?'bg-indigo-600 text-white border-indigo-600':'border-slate-200 hover:bg-slate-50') + '">' + (reorderMode?'完成排序':'排序客戶') + '</button>' +
       '<div class="text-sm text-slate-500 ml-auto">共 ' + list.length + ' 個客戶</div>' +
       '<button onclick="tdOpenClientModal()" class="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">＋ 新增客戶</button>' +
     '</div>';
@@ -641,8 +666,12 @@
         ['刪除客戶', "tdToggleActionMenu('" + ckey + "'); tdDeleteClient('" + c.id + "')", 'text-rose-500']
       ];
       var cc = clientColor(c.id);
-      html += '<div class="bg-white border border-slate-200 border-l-4 ' + cc.border + ' rounded-xl overflow-hidden">' +
-        '<div class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50" onclick="tdToggleClient(\'' + c.id + '\')">' +
+      var dragAttrs = reorderMode
+        ? ' draggable="true" ondragstart="tdDragStart(event,\'' + c.id + '\')" ondragover="tdDragOver(event)" ondrop="tdDropReorder(event,\'' + c.id + '\')"'
+        : '';
+      html += '<div class="bg-white border border-slate-200 border-l-4 ' + cc.border + ' rounded-xl overflow-hidden' + (reorderMode?' cursor-move':'') + '"' + dragAttrs + '>' +
+        '<div class="flex items-center gap-3 px-4 py-3 ' + (reorderMode?'':'cursor-pointer hover:bg-slate-50') + '" onclick="' + (reorderMode?'':'tdToggleClient(\''+c.id+'\')') + '">' +
+          (reorderMode ? '<span class="text-slate-300 shrink-0" title="拖曳排序">⠿</span>' : '') +
           '<span class="text-xs text-slate-400 w-3">' + (expanded?'▾':'▸') + '</span>' +
           '<span class="w-6 h-6 rounded-full ' + cc.avatar + ' text-white text-xs font-bold flex items-center justify-center shrink-0">' + esc((c.name||'?').charAt(0).toUpperCase()) + '</span>' +
           '<span class="font-semibold">' + esc(c.name) + '</span>' +
