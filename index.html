@@ -31,7 +31,7 @@
   var loaded = false;
 
   var clients = [], campaigns = [], flights = [], links = [];
-  var activeView = 'dashboard';
+  var activeView = 'clients';
   var globalSearch = '';
   var expandedClients = {};
   var expandedCampaigns = {};
@@ -1064,8 +1064,6 @@
     var topbarHtml = '<header class="h-14 border-b border-slate-200 bg-white flex items-center gap-3 px-4 shrink-0 relative">' +
       '<div class="font-semibold text-sm mr-2">' + viewTitle + '</div>' +
       '<input placeholder="全域搜尋：客戶、案件、媒體、聯絡人..." value="' + esc(globalSearch) + '" oninput="tdSetSearch(this.value)" class="flex-1 max-w-md px-3 py-1.5 border border-slate-200 rounded-lg text-sm">' +
-      '<button onclick="tdOpenClientModal()" class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50">＋客戶</button>' +
-      '<button onclick="tdSetView(\'clients\')" class="text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50">＋案件／檔期</button>' +
       '<div class="relative"><button onclick="tdSetView(\'dashboard\')" class="text-sm px-2">🔔' + (todos.length?('<span class="text-xs align-super text-rose-500 font-bold">'+todos.length+'</span>'):'') + '</button></div>' +
     '</header>';
 
