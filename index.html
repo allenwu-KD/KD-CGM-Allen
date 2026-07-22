@@ -175,22 +175,23 @@
     var todos = [];
     flights.forEach(function(f){
       var st = computeStatus(f);
-      if ((st === 'active' || st === 'dueSoon' || st === 'endingToday') && !f.is_brief_sent) todos.push({ label: '已進入檔期但尚未發單', f: f });
-      if (st === 'dueSoon') todos.push({ label: statusLabelText(f), f: f });
-      if (st === 'endingToday') todos.push({ label: '今日結束', f: f });
-      if (st === 'upcoming') todos.push({ label: '即將開始', f: f });
-      if (st === 'noEndDate') todos.push({ label: '沒有填寫結束日期', f: f });
-      if (!linksOf('flight', f.id).length && !linksOf('campaign', f.campaign_id).length) todos.push({ label: '缺少必要連結', f: f });
+      if ((st === 'active' || st === 'dueSoon' || st === 'endingToday') && !f.is_brief_sent) todos.push({ label: '已進入檔期但尚未發單', f: f, urgent: true });
+      if (st === 'dueSoon') todos.push({ label: statusLabelText(f), f: f, urgent: true });
+      if (st === 'endingToday') todos.push({ label: '今日結束', f: f, urgent: true });
+      if (st === 'upcoming') todos.push({ label: '即將開始', f: f, urgent: false });
+      if (st === 'noEndDate') todos.push({ label: '沒有填寫結束日期', f: f, urgent: false });
+      if (!linksOf('flight', f.id).length && !linksOf('campaign', f.campaign_id).length) todos.push({ label: '缺少必要連結', f: f, urgent: false });
       if (f.billing_mode) {
         var bStatus = computeBillingStatus(f);
-        if (f.billing_mode === 'prepay' && bStatus === '尚未開立發票') todos.push({ label: '預先請款尚未開立發票', f: f });
-        if (f.billing_mode === 'closing' && bStatus === '尚未開立發票') todos.push({ label: '結案請款尚未開立發票', f: f });
-        if (f.billing_mode === 'advance' && bStatus === '等待請款') todos.push({ label: '代墊案件等待請款', f: f });
-        if (bStatus === '已送請款') todos.push({ label: '已送請款，等待收款', f: f });
+        if (f.billing_mode === 'prepay' && bStatus === '尚未開立發票') todos.push({ label: '預先請款尚未開立發票', f: f, urgent: true });
+        if (f.billing_mode === 'closing' && bStatus === '尚未開立發票') todos.push({ label: '結案請款尚未開立發票', f: f, urgent: true });
+        if (f.billing_mode === 'advance' && bStatus === '等待請款') todos.push({ label: '代墊案件等待請款', f: f, urgent: true });
+        if (bStatus === '已送請款') todos.push({ label: '已送請款，等待收款', f: f, urgent: true });
       }
     });
     return todos;
   }
+  function urgentTodos(){ return computeTodos().filter(function(t){ return t.urgent; }); }
 
   // ---------------- 自訂連結 ----------------
   function linksSectionHtml(entityType, entityId, showAddInline){
@@ -503,23 +504,27 @@
       return '<div class="bg-white border border-slate-200 rounded-xl p-4"><div class="text-2xl font-bold text-slate-800">' + c[1] + '</div><div class="text-xs text-slate-500 mt-1">' + c[0] + '</div></div>';
     }).join('') + '</div>';
 
-    var todos = computeTodos();
-    var todosHtml = !todos.length
-      ? '<div class="text-sm text-slate-400 py-8 text-center">目前沒有待辦事項 🎉</div>'
-      : todos.map(function(t){
-          var camp = campaigns.find(function(c){return c.id===t.f.campaign_id;});
-          var cli = camp ? clients.find(function(c){return c.id===camp.client_id;}) : null;
-          return '<div class="flex items-center gap-3 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="tdOpenFlightModal(\'' + t.f.campaign_id + '\',\'' + t.f.id + '\')">' +
-            '<span class="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>' +
-            '<span class="text-sm">' + esc(t.label) + '</span>' +
-            '<span class="text-xs text-slate-400 ml-auto">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp?camp.name:'') + ' ／ ' + esc(mediaLabel(t.f)) + '</span>' +
-          '</div>';
-        }).join('');
+    var allTodos = computeTodos();
+    var urgent = allTodos.filter(function(t){ return t.urgent; });
+    var housekeeping = allTodos.filter(function(t){ return !t.urgent; });
+    function todoRow(t){
+      var camp = campaigns.find(function(c){return c.id===t.f.campaign_id;});
+      var cli = camp ? clients.find(function(c){return c.id===camp.client_id;}) : null;
+      return '<div class="flex items-center gap-3 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="tdOpenFlightModal(\'' + t.f.campaign_id + '\',\'' + t.f.id + '\')">' +
+        '<span class="w-1.5 h-1.5 rounded-full ' + (t.urgent?'bg-rose-500':'bg-slate-300') + ' shrink-0"></span>' +
+        '<span class="text-sm">' + esc(t.label) + '</span>' +
+        '<span class="text-xs text-slate-400 ml-auto">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp?camp.name:'') + ' ／ ' + esc(mediaLabel(t.f)) + '</span>' +
+      '</div>';
+    }
 
     return cardsHtml +
+      '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden mb-4">' +
+        '<div class="px-4 py-3 border-b border-slate-200 font-semibold text-sm">急迫待辦（' + urgent.length + '）</div>' +
+        (urgent.length ? urgent.map(todoRow).join('') : '<div class="text-sm text-slate-400 py-8 text-center">目前沒有急迫的事項 🎉</div>') +
+      '</div>' +
       '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">' +
-        '<div class="px-4 py-3 border-b border-slate-200 font-semibold text-sm">今日待辦（' + todos.length + '）</div>' +
-        todosHtml +
+        '<div class="px-4 py-3 border-b border-slate-200 font-semibold text-sm text-slate-500">資料待補完（' + housekeeping.length + '）</div>' +
+        (housekeeping.length ? housekeeping.map(todoRow).join('') : '<div class="text-sm text-slate-400 py-8 text-center">沒有需要補的資料</div>') +
       '</div>';
   }
 
@@ -1051,12 +1056,12 @@
     if (!configOk) { renderConfigNeeded(); return; }
     if (!loaded) { document.getElementById('root').innerHTML = '<div class="h-screen flex items-center justify-center text-slate-400 text-sm">載入中...</div>'; return; }
 
-    var todos = computeTodos();
+    var todos = urgentTodos();
     var sidebarHtml = '<aside class="w-56 bg-white border-r border-slate-200 flex flex-col shrink-0">' +
       '<div class="h-14 flex items-center px-4 border-b border-slate-200 font-bold text-slate-800 text-sm">客戶專案管理</div>' +
       '<nav class="flex-1 overflow-y-auto py-2">' + NAV.map(function(n){
         var active = activeView === n.key;
-        return '<button onclick="tdSetView(\'' + n.key + '\')" class="w-full text-left px-4 py-2 text-sm flex items-center gap-2 ' + (active ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-2 border-indigo-600' : 'text-slate-600 hover:bg-slate-50') + '">' + n.label + (n.key==='dashboard' && todos.length ? '<span class="ml-auto text-xs bg-amber-100 text-amber-700 rounded-full px-1.5">' + todos.length + '</span>' : '') + '</button>';
+        return '<button onclick="tdSetView(\'' + n.key + '\')" class="w-full text-left px-4 py-2 text-sm flex items-center gap-2 ' + (active ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-2 border-indigo-600' : 'text-slate-600 hover:bg-slate-50') + '">' + n.label + (n.key==='dashboard' && todos.length ? '<span class="ml-auto text-xs bg-rose-100 text-rose-700 rounded-full px-1.5">' + todos.length + '</span>' : '') + '</button>';
       }).join('') + '</nav>' +
     '</aside>';
 
