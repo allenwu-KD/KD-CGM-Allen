@@ -538,18 +538,25 @@
       noteGroups[n.note_date].push(n);
     });
     var allNoteKeys = Object.keys(noteGroups).sort();
-    function noteRow(n, isOverdue){
-      return '<div class="flex items-center gap-3 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 ' + (isOverdue?'bg-rose-50/60 border-l-2 border-l-rose-400':'') + '">' +
-        '<button onclick="tdToggleDailyNoteDone(\'' + n.id + '\', ' + (n.is_done?'true':'false') + ')" class="w-4 h-4 rounded border ' + (n.is_done?'bg-emerald-500 border-emerald-500':(isOverdue?'border-rose-400':'border-slate-300')) + ' shrink-0 flex items-center justify-center text-white text-[10px]">' + (n.is_done?'✓':'') + '</button>' +
-        '<span class="text-sm ' + (n.is_done?'line-through text-slate-400':(isOverdue?'text-rose-700':'')) + '">' + esc(n.content) + '</span>' +
+    var COLOR_STYLES = {
+      overdue: { header: 'bg-rose-50 border-y border-rose-100 text-rose-600', rowBg: 'bg-rose-50/60 border-l-2 border-l-rose-400', checkboxBorder: 'border-rose-400', text: 'text-rose-700' },
+      today: { header: 'bg-blue-50 border-y border-blue-100 text-blue-600', rowBg: 'bg-blue-50/60 border-l-2 border-l-blue-400', checkboxBorder: 'border-blue-400', text: 'text-blue-700' },
+      future: { header: 'bg-orange-50 border-y border-orange-100 text-orange-700', rowBg: 'bg-orange-50/60 border-l-2 border-l-orange-300', checkboxBorder: 'border-orange-400', text: 'text-orange-700' }
+    };
+    function noteRow(n, colorType){
+      var s = COLOR_STYLES[colorType];
+      return '<div class="flex items-center gap-3 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 ' + (s?s.rowBg:'') + '">' +
+        '<button onclick="tdToggleDailyNoteDone(\'' + n.id + '\', ' + (n.is_done?'true':'false') + ')" class="w-4 h-4 rounded border ' + (n.is_done?'bg-emerald-500 border-emerald-500':(s?s.checkboxBorder:'border-slate-300')) + ' shrink-0 flex items-center justify-center text-white text-[10px]">' + (n.is_done?'✓':'') + '</button>' +
+        '<span class="text-sm ' + (n.is_done?'line-through text-slate-400':(s?s.text:'')) + '">' + esc(n.content) + '</span>' +
         '<button onclick="tdDeleteDailyNote(\'' + n.id + '\')" class="ml-auto text-slate-300 hover:text-rose-500 text-xs px-1">✕</button>' +
       '</div>';
     }
-    function groupHtml(key, isOverdue){
+    function groupHtml(key, colorType){
       var items = noteGroups[key];
-      var headerCls = isOverdue ? 'bg-rose-50 border-y border-rose-100 text-rose-600' : 'bg-slate-50 border-y border-slate-100 text-slate-500';
+      var s = COLOR_STYLES[colorType];
+      var headerCls = s ? s.header : 'bg-slate-50 border-y border-slate-100 text-slate-500';
       return '<div class="px-4 py-2 text-xs font-semibold ' + headerCls + '">' + dateGroupLabel(key) + '（' + items.length + '）</div>' +
-        items.map(function(n){ return noteRow(n, isOverdue); }).join('');
+        items.map(function(n){ return noteRow(n, colorType); }).join('');
     }
 
     var visibleKeys = [], historyKeys = [];
@@ -562,8 +569,11 @@
 
     var notesHtml = visibleKeys.length
       ? visibleKeys.map(function(key){
+          var diff = dayDiff(key);
           var hasPending = noteGroups[key].some(function(n){ return !n.is_done; });
-          return groupHtml(key, dayDiff(key) < 0 && hasPending);
+          var colorType = null;
+          if (hasPending) { if (diff < 0) colorType = 'overdue'; else if (diff === 0) colorType = 'today'; else colorType = 'future'; }
+          return groupHtml(key, colorType);
         }).join('')
       : '<div class="text-sm text-slate-400 py-8 text-center">還沒有待辦事項，在下面新增一筆</div>';
 
