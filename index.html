@@ -30,7 +30,7 @@
 
   var loaded = false;
 
-  var clients = [], campaigns = [], flights = [], links = [];
+  var clients = [], campaigns = [], flights = [], links = [], dailyNotes = [];
   var activeView = 'clients';
   var globalSearch = '';
   var expandedClients = {};
@@ -97,6 +97,17 @@
   function todayStr(){ return new Date().toISOString().slice(0,10); }
   function parseDate(s){ if(!s) return null; var p = s.split('-'); return new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)); }
   function fmtDate(s){ if(!s) return '—'; var d = parseDate(s); return (d.getMonth()+1) + '/' + d.getDate(); }
+  var WEEKDAY_CN = ['日','一','二','三','四','五','六'];
+  function dateGroupLabel(dateStr){
+    var diff = dayDiff(dateStr);
+    var d = parseDate(dateStr);
+    var wd = '週' + WEEKDAY_CN[d.getDay()];
+    var datePart = fmtDate(dateStr) + '（' + wd + '）';
+    if (diff === 0) return '今天・' + datePart;
+    if (diff === 1) return '明天・' + datePart;
+    if (diff < 0) return '已過期・' + datePart;
+    return datePart;
+  }
   function dayDiff(s){ if(!s) return null; var d = parseDate(s); return Math.round((d - todayMid()) / 86400000); }
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function yearMonthOf(s){ if(!s) return null; var p = s.split('-'); return { y: parseInt(p[0],10), m: parseInt(p[1],10) }; }
@@ -294,6 +305,7 @@
     loaded = false; render();
     var res = await sb.from('clients').select('*, campaigns(*, ad_flights(*))').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
     var linksRes = await sb.from('links').select('*');
+    var notesRes = await sb.from('daily_notes').select('*').order('note_date', { ascending: true }).order('created_at', { ascending: true });
     if (!res.error && res.data) {
       clients = res.data.map(function(c){ var copy = Object.assign({}, c); delete copy.campaigns; return copy; });
       campaigns = []; flights = [];
@@ -306,6 +318,7 @@
       });
     } else { clients=[]; campaigns=[]; flights=[]; if(res.error) console.error(res.error); }
     links = (!linksRes.error && linksRes.data) ? linksRes.data : [];
+    dailyNotes = (!notesRes.error && notesRes.data) ? notesRes.data : [];
     loaded = true; render();
   }
 
@@ -518,10 +531,35 @@
       '</div>';
     }
 
+    var noteGroups = {};
+    dailyNotes.forEach(function(n){
+      noteGroups[n.note_date] = noteGroups[n.note_date] || [];
+      noteGroups[n.note_date].push(n);
+    });
+    var noteDateKeys = Object.keys(noteGroups).sort();
+    function noteRow(n){
+      return '<div class="flex items-center gap-3 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50">' +
+        '<button onclick="tdToggleDailyNoteDone(\'' + n.id + '\', ' + (n.is_done?'true':'false') + ')" class="w-4 h-4 rounded border ' + (n.is_done?'bg-emerald-500 border-emerald-500':'border-slate-300') + ' shrink-0 flex items-center justify-center text-white text-[10px]">' + (n.is_done?'✓':'') + '</button>' +
+        '<span class="text-sm ' + (n.is_done?'line-through text-slate-400':'') + '">' + esc(n.content) + '</span>' +
+        '<button onclick="tdDeleteDailyNote(\'' + n.id + '\')" class="ml-auto text-slate-300 hover:text-rose-500 text-xs px-1">✕</button>' +
+      '</div>';
+    }
+    var notesHtml = noteDateKeys.length
+      ? noteDateKeys.map(function(key){
+          return '<div class="px-4 py-2 bg-slate-50 border-y border-slate-100 text-xs font-semibold text-slate-500">' + dateGroupLabel(key) + '（' + noteGroups[key].length + '）</div>' +
+            noteGroups[key].map(noteRow).join('');
+        }).join('')
+      : '<div class="text-sm text-slate-400 py-8 text-center">還沒有待辦事項，在下面新增一筆</div>';
+
     return cardsHtml +
       '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden mb-4">' +
-        '<div class="px-4 py-3 border-b border-slate-200 font-semibold text-sm">急迫待辦（' + urgent.length + '）</div>' +
-        (urgent.length ? urgent.map(todoRow).join('') : '<div class="text-sm text-slate-400 py-8 text-center">目前沒有急迫的事項 🎉</div>') +
+        '<div class="px-4 py-3 border-b border-slate-200 font-semibold text-sm">每日待辦</div>' +
+        notesHtml +
+        '<form onsubmit="tdAddDailyNote(event)" class="flex items-center gap-2 px-3 py-2.5 bg-slate-50">' +
+          '<input type="date" name="note_date" value="' + todayStr() + '" class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs">' +
+          '<input name="content" placeholder="輸入今天要做的事，按 Enter 新增..." class="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm">' +
+          '<button type="submit" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold">新增</button>' +
+        '</form>' +
       '</div>' +
       '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">' +
         '<div class="px-4 py-3 border-b border-slate-200 font-semibold text-sm text-slate-500">資料待補完（' + housekeeping.length + '）</div>' +
@@ -610,6 +648,30 @@
     render();
   };
   window.tdToggleReorderMode = function(){ reorderMode = !reorderMode; render(); };
+
+  // ---------------- 每日待辦（手寫記事） ----------------
+  window.tdAddDailyNote = async function(ev){
+    ev.preventDefault();
+    var f = ev.target;
+    var date = f.note_date.value || todayStr();
+    var content = f.content.value.trim();
+    if (!content) return;
+    f.content.value = '';
+    await sb.from('daily_notes').insert({ note_date: date, content: content, is_done: false });
+    await loadAll();
+  };
+  window.tdToggleDailyNoteDone = async function(id, current){
+    await sb.from('daily_notes').update({ is_done: !current }).eq('id', id);
+    await loadAll();
+  };
+  window.tdDeleteDailyNote = async function(id){
+    await sb.from('daily_notes').delete().eq('id', id);
+    await loadAll();
+  };
+  function pendingDailyNotesCount(){
+    var today = todayStr();
+    return dailyNotes.filter(function(n){ return !n.is_done && n.note_date <= today; }).length;
+  }
   window.tdDragStart = function(ev, id){
     ev.dataTransfer.setData('text/plain', id);
     ev.dataTransfer.effectAllowed = 'move';
@@ -1085,12 +1147,12 @@
     if (!configOk) { renderConfigNeeded(); return; }
     if (!loaded) { document.getElementById('root').innerHTML = '<div class="h-screen flex items-center justify-center text-slate-400 text-sm">載入中...</div>'; return; }
 
-    var todos = urgentTodos();
+    var todoCount = pendingDailyNotesCount();
     var sidebarHtml = '<aside class="w-56 bg-white border-r border-slate-200 flex flex-col shrink-0">' +
       '<div class="h-14 flex items-center px-4 border-b border-slate-200 font-bold text-slate-800 text-sm">客戶專案管理</div>' +
       '<nav class="flex-1 overflow-y-auto py-2">' + NAV.map(function(n){
         var active = activeView === n.key;
-        return '<button onclick="tdSetView(\'' + n.key + '\')" class="w-full text-left px-4 py-2 text-sm flex items-center gap-2 ' + (active ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-2 border-indigo-600' : 'text-slate-600 hover:bg-slate-50') + '">' + n.label + (n.key==='dashboard' && todos.length ? '<span class="ml-auto text-xs bg-rose-100 text-rose-700 rounded-full px-1.5">' + todos.length + '</span>' : '') + '</button>';
+        return '<button onclick="tdSetView(\'' + n.key + '\')" class="w-full text-left px-4 py-2 text-sm flex items-center gap-2 ' + (active ? 'bg-indigo-50 text-indigo-700 font-semibold border-r-2 border-indigo-600' : 'text-slate-600 hover:bg-slate-50') + '">' + n.label + (n.key==='dashboard' && todoCount ? '<span class="ml-auto text-xs bg-rose-100 text-rose-700 rounded-full px-1.5">' + todoCount + '</span>' : '') + '</button>';
       }).join('') + '</nav>' +
     '</aside>';
 
@@ -1098,7 +1160,7 @@
     var topbarHtml = '<header class="h-14 border-b border-slate-200 bg-white flex items-center gap-3 px-4 shrink-0 relative">' +
       '<div class="font-semibold text-sm mr-2">' + viewTitle + '</div>' +
       '<input placeholder="全域搜尋：客戶、案件、媒體、聯絡人..." value="' + esc(globalSearch) + '" oninput="tdSetSearch(this.value)" class="flex-1 max-w-md px-3 py-1.5 border border-slate-200 rounded-lg text-sm">' +
-      '<div class="relative"><button onclick="tdSetView(\'dashboard\')" class="text-sm px-2">🔔' + (todos.length?('<span class="text-xs align-super text-rose-500 font-bold">'+todos.length+'</span>'):'') + '</button></div>' +
+      '<div class="relative"><button onclick="tdSetView(\'dashboard\')" class="text-sm px-2">🔔' + (todoCount?('<span class="text-xs align-super text-rose-500 font-bold">'+todoCount+'</span>'):'') + '</button></div>' +
     '</header>';
 
     var mainHtml;
