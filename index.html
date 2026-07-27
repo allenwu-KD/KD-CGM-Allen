@@ -30,7 +30,7 @@
 
   var loaded = false;
 
-  var clients = [], campaigns = [], flights = [], links = [], dailyNotes = [];
+  var clients = [], campaigns = [], flights = [], links = [], dailyNotes = [], tags = [];
   var activeView = 'clients';
   var globalSearch = '';
   var expandedClients = {};
@@ -116,6 +116,35 @@
   function campaignsOfClient(clientId){ return campaigns.filter(function(c){ return c.client_id === clientId; }); }
   function flightsOfCampaign(campaignId){ return flights.filter(function(f){ return f.campaign_id === campaignId; }); }
   function linksOf(type, id){ return links.filter(function(l){ return l.entity_type === type && l.entity_id === id; }); }
+  function tagsOf(type, id){ return tags.filter(function(t){ return t.entity_type === type && t.entity_id === id; }); }
+  function tagsInlineHtml(entityType, entityId){
+    var list = tagsOf(entityType, entityId);
+    var chips = list.map(function(t){
+      return '<span class="group relative inline-flex items-center rounded-full bg-violet-50 text-violet-700 text-xs pl-2 pr-1 py-0.5">' +
+        '<span>' + esc(t.label) + '</span>' +
+        '<button onclick="event.stopPropagation(); tdDeleteTag(\'' + t.id + '\')" class="ml-1 text-violet-300 hover:text-rose-500 opacity-0 group-hover:opacity-100 w-3.5 h-3.5 flex items-center justify-center leading-none">✕</button>' +
+      '</span>';
+    }).join('');
+    var addBtn = '<button onclick="event.stopPropagation(); tdOpenTagModal(\'' + entityType + '\',\'' + entityId + '\')" class="text-xs text-slate-300 hover:text-slate-500 w-5 h-5 flex items-center justify-center rounded-full border border-dashed border-slate-300 hover:border-slate-400 shrink-0" title="新增標籤">+</button>';
+    return chips + addBtn;
+  }
+  window.tdOpenTagModal = function(entityType, entityId){
+    modal = { type: 'tag', mode: 'add', data: {}, entityType: entityType, entityId: entityId };
+    render();
+  };
+  window.tdSubmitTag = async function(ev){
+    ev.preventDefault();
+    var label = ev.target.label.value.trim();
+    if (!label) return;
+    var et = modal.entityType, eid = modal.entityId;
+    modal = null; render();
+    await sb.from('tags').insert({ entity_type: et, entity_id: eid, label: label });
+    await loadAll();
+  };
+  window.tdDeleteTag = async function(id){
+    await sb.from('tags').delete().eq('id', id);
+    await loadAll();
+  };
   function mediaLabel(f){ return f.media_platform === '其他' ? (f.custom_media_name || '其他') : f.media_platform; }
 
   function computeStatus(f){
@@ -307,6 +336,7 @@
     var res = await sb.from('clients').select('*, campaigns(*, ad_flights(*))').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
     var linksRes = await sb.from('links').select('*');
     var notesRes = await sb.from('daily_notes').select('*').order('note_date', { ascending: true }).order('created_at', { ascending: true });
+    var tagsRes = await sb.from('tags').select('*');
     if (!res.error && res.data) {
       clients = res.data.map(function(c){ var copy = Object.assign({}, c); delete copy.campaigns; return copy; });
       campaigns = []; flights = [];
@@ -320,6 +350,7 @@
     } else { clients=[]; campaigns=[]; flights=[]; if(res.error) console.error(res.error); }
     links = (!linksRes.error && linksRes.data) ? linksRes.data : [];
     dailyNotes = (!notesRes.error && notesRes.data) ? notesRes.data : [];
+    tags = (!tagsRes.error && tagsRes.data) ? tagsRes.data : [];
     loaded = true; render();
   }
 
@@ -773,6 +804,7 @@
           '<span class="w-6 h-6 rounded-full ' + cc.avatar + ' text-white text-xs font-bold flex items-center justify-center shrink-0">' + esc((c.name||'?').charAt(0).toUpperCase()) + '</span>' +
           '<span class="font-semibold">' + esc(c.name) + '</span>' +
           statusBadge(st) +
+          '<div class="flex items-center gap-1 flex-wrap" onclick="event.stopPropagation()">' + tagsInlineHtml('client', c.id) + '</div>' +
           '<div class="flex-1"></div>' +
           '<button onclick="event.stopPropagation(); tdOpenCampaignModal(\'' + c.id + '\')" class="text-xs px-2 py-1 rounded border border-slate-200 hover:bg-slate-50 shrink-0">＋ 新增案件</button>' +
           '<div onclick="event.stopPropagation()" class="shrink-0">' + actionsButtonHtml(ckey, citems) + '</div>' +
@@ -1157,14 +1189,23 @@
       '</div>' +
     '</form>';
   }
+  function renderTagModal(m){
+    return '<form onsubmit="tdSubmitTag(event)" class="p-5 overflow-y-auto flex-1">' +
+      fieldHtml('標籤內容', '<input name="label" required maxlength="20" placeholder="例如：每月5號發票" class="' + inputClass() + '" autofocus>') +
+      '<div class="flex gap-2 mt-4">' +
+        '<button type="button" onclick="tdCloseModal()" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm">取消</button>' +
+        '<button type="submit" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">新增標籤</button>' +
+      '</div>' +
+    '</form>';
+  }
 
   function renderModal(){
     if (!modal) return '';
-    var title = { client:'客戶', campaign:'產品／活動案件', flight:'廣告檔期', link:'連結' }[modal.type];
-    var body = modal.type==='client' ? renderClientModal(modal) : modal.type==='campaign' ? renderCampaignModal(modal) : modal.type==='flight' ? renderFlightModal(modal) : renderLinkModal(modal);
-    var isLink = modal.type === 'link';
+    var title = { client:'客戶', campaign:'產品／活動案件', flight:'廣告檔期', link:'連結', tag:'標籤' }[modal.type];
+    var body = modal.type==='client' ? renderClientModal(modal) : modal.type==='campaign' ? renderCampaignModal(modal) : modal.type==='flight' ? renderFlightModal(modal) : modal.type==='tag' ? renderTagModal(modal) : renderLinkModal(modal);
+    var isNarrow = modal.type === 'link' || modal.type === 'tag';
     return '<div class="fixed inset-0 bg-slate-900/40 z-40 flex justify-end">' +
-      '<div class="w-full ' + (isLink?'max-w-sm':'max-w-lg') + ' bg-white h-full flex flex-col">' +
+      '<div class="w-full ' + (isNarrow?'max-w-sm':'max-w-lg') + ' bg-white h-full flex flex-col">' +
         '<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">' +
           '<div class="font-semibold">' + (modal.mode==='edit'?'編輯':'新增') + title + '</div>' +
           '<button onclick="tdCloseModal()" class="text-slate-400 hover:text-slate-600">✕</button>' +
