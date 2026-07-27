@@ -43,6 +43,7 @@
   var openMenuPos = null;
   var viewOnlyActive = false;
   var reorderMode = false;
+  var showCompletedHistory = false;
   var viewOnlyTodo = false;
 
   var archiveYear = 'all', archiveMonth = 'all', archiveClient = 'all', archiveMedia = 'all', archiveSearch = '';
@@ -536,25 +537,48 @@
       noteGroups[n.note_date] = noteGroups[n.note_date] || [];
       noteGroups[n.note_date].push(n);
     });
-    var noteDateKeys = Object.keys(noteGroups).sort();
-    function noteRow(n){
-      return '<div class="flex items-center gap-3 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50">' +
-        '<button onclick="tdToggleDailyNoteDone(\'' + n.id + '\', ' + (n.is_done?'true':'false') + ')" class="w-4 h-4 rounded border ' + (n.is_done?'bg-emerald-500 border-emerald-500':'border-slate-300') + ' shrink-0 flex items-center justify-center text-white text-[10px]">' + (n.is_done?'✓':'') + '</button>' +
-        '<span class="text-sm ' + (n.is_done?'line-through text-slate-400':'') + '">' + esc(n.content) + '</span>' +
+    var allNoteKeys = Object.keys(noteGroups).sort();
+    function noteRow(n, isOverdue){
+      return '<div class="flex items-center gap-3 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 ' + (isOverdue?'bg-rose-50/60 border-l-2 border-l-rose-400':'') + '">' +
+        '<button onclick="tdToggleDailyNoteDone(\'' + n.id + '\', ' + (n.is_done?'true':'false') + ')" class="w-4 h-4 rounded border ' + (n.is_done?'bg-emerald-500 border-emerald-500':(isOverdue?'border-rose-400':'border-slate-300')) + ' shrink-0 flex items-center justify-center text-white text-[10px]">' + (n.is_done?'✓':'') + '</button>' +
+        '<span class="text-sm ' + (n.is_done?'line-through text-slate-400':(isOverdue?'text-rose-700':'')) + '">' + esc(n.content) + '</span>' +
         '<button onclick="tdDeleteDailyNote(\'' + n.id + '\')" class="ml-auto text-slate-300 hover:text-rose-500 text-xs px-1">✕</button>' +
       '</div>';
     }
-    var notesHtml = noteDateKeys.length
-      ? noteDateKeys.map(function(key){
-          return '<div class="px-4 py-2 bg-slate-50 border-y border-slate-100 text-xs font-semibold text-slate-500">' + dateGroupLabel(key) + '（' + noteGroups[key].length + '）</div>' +
-            noteGroups[key].map(noteRow).join('');
+    function groupHtml(key, isOverdue){
+      var items = noteGroups[key];
+      var headerCls = isOverdue ? 'bg-rose-50 border-y border-rose-100 text-rose-600' : 'bg-slate-50 border-y border-slate-100 text-slate-500';
+      return '<div class="px-4 py-2 text-xs font-semibold ' + headerCls + '">' + dateGroupLabel(key) + '（' + items.length + '）</div>' +
+        items.map(function(n){ return noteRow(n, isOverdue); }).join('');
+    }
+
+    var visibleKeys = [], historyKeys = [];
+    allNoteKeys.forEach(function(key){
+      var items = noteGroups[key];
+      var isPast = dayDiff(key) < 0;
+      var hasPending = items.some(function(n){ return !n.is_done; });
+      if (isPast && !hasPending) historyKeys.push(key); else visibleKeys.push(key);
+    });
+
+    var notesHtml = visibleKeys.length
+      ? visibleKeys.map(function(key){
+          var hasPending = noteGroups[key].some(function(n){ return !n.is_done; });
+          return groupHtml(key, dayDiff(key) < 0 && hasPending);
         }).join('')
       : '<div class="text-sm text-slate-400 py-8 text-center">還沒有待辦事項，在下面新增一筆</div>';
+
+    var historyToggleHtml = historyKeys.length
+      ? '<div class="px-4 py-2 border-t border-slate-100">' +
+          '<button onclick="tdToggleHistory()" class="text-xs text-slate-400 underline hover:text-slate-600">' + (showCompletedHistory?'收合歷史紀錄':'顯示歷史紀錄（' + historyKeys.length + ' 天）') + '</button>' +
+        '</div>' +
+        (showCompletedHistory ? historyKeys.map(function(key){ return groupHtml(key, false); }).join('') : '')
+      : '';
 
     return cardsHtml +
       '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden mb-4">' +
         '<div class="px-4 py-3 border-b border-slate-200 font-semibold text-sm">每日待辦</div>' +
         notesHtml +
+        historyToggleHtml +
         '<form onsubmit="tdAddDailyNote(event)" class="flex items-center gap-2 px-3 py-2.5 bg-slate-50">' +
           '<input type="date" name="note_date" value="' + todayStr() + '" class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs">' +
           '<input name="content" placeholder="輸入今天要做的事，按 Enter 新增..." class="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm">' +
@@ -672,6 +696,7 @@
     var today = todayStr();
     return dailyNotes.filter(function(n){ return !n.is_done && n.note_date <= today; }).length;
   }
+  window.tdToggleHistory = function(){ showCompletedHistory = !showCompletedHistory; render(); };
   window.tdDragStart = function(ev, id){
     ev.dataTransfer.setData('text/plain', id);
     ev.dataTransfer.effectAllowed = 'move';
