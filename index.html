@@ -582,29 +582,41 @@
         '<button onclick="tdDeleteDailyNote(\'' + n.id + '\')" class="ml-auto text-slate-300 hover:text-rose-500 text-xs px-1">✕</button>' +
       '</div>';
     }
-    function groupHtml(key, colorType){
-      var items = noteGroups[key];
+    function groupHtml(key, items, colorType){
       var s = COLOR_STYLES[colorType];
       var headerCls = s ? s.header : 'bg-slate-50 border-y border-slate-100 text-slate-500';
       return '<div class="px-4 py-2 text-xs font-semibold ' + headerCls + '">' + dateGroupLabel(key) + '（' + items.length + '）</div>' +
         items.map(function(n){ return noteRow(n, colorType); }).join('');
     }
 
-    var visibleKeys = [], historyKeys = [];
+    var visibleGroups = {}, historyGroups = {};
     allNoteKeys.forEach(function(key){
       var items = noteGroups[key];
       var isPast = dayDiff(key) < 0;
-      var hasPending = items.some(function(n){ return !n.is_done; });
-      if (isPast && !hasPending) historyKeys.push(key); else visibleKeys.push(key);
+      if (isPast) {
+        var pending = items.filter(function(n){ return !n.is_done; });
+        var done = items.filter(function(n){ return n.is_done; });
+        if (pending.length) {
+          visibleGroups[key] = pending;
+          if (done.length) historyGroups[key] = done;
+        } else {
+          historyGroups[key] = items;
+        }
+      } else {
+        visibleGroups[key] = items;
+      }
     });
+    var visibleKeys = Object.keys(visibleGroups).sort();
+    var historyKeys = Object.keys(historyGroups).sort();
 
     var notesHtml = visibleKeys.length
       ? visibleKeys.map(function(key){
           var diff = dayDiff(key);
-          var hasPending = noteGroups[key].some(function(n){ return !n.is_done; });
+          var items = visibleGroups[key];
+          var hasPending = items.some(function(n){ return !n.is_done; });
           var colorType = null;
           if (hasPending) { if (diff < 0) colorType = 'overdue'; else if (diff === 0) colorType = 'today'; else colorType = 'future'; }
-          return groupHtml(key, colorType);
+          return groupHtml(key, items, colorType);
         }).join('')
       : '<div class="text-sm text-slate-400 py-8 text-center">還沒有待辦事項，在下面新增一筆</div>';
 
@@ -612,7 +624,7 @@
       ? '<div class="px-4 py-2 border-t border-slate-100">' +
           '<button onclick="tdToggleHistory()" class="text-xs text-slate-400 underline hover:text-slate-600">' + (showCompletedHistory?'收合歷史紀錄':'顯示歷史紀錄（' + historyKeys.length + ' 天）') + '</button>' +
         '</div>' +
-        (showCompletedHistory ? historyKeys.map(function(key){ return groupHtml(key, false); }).join('') : '')
+        (showCompletedHistory ? historyKeys.map(function(key){ return groupHtml(key, historyGroups[key], null); }).join('') : '')
       : '';
 
     return cardsHtml +
