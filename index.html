@@ -30,7 +30,10 @@
 
   var loaded = false;
 
-  var clients = [], campaigns = [], flights = [], links = [], dailyNotes = [], tags = [], leads = [];
+  var clients = [], campaigns = [], flights = [], links = [], dailyNotes = [], tags = [], leads = [], leadContacts = [];
+  var leadFilterStatus = 'all', leadFilterSource = 'all', leadSort = 'lastContact';
+  var leadPageSize = 20, leadPage = 1;
+  var expandedLeadHistory = {};
   var activeView = 'clients';
   var globalSearch = '';
   var expandedClients = {};
@@ -71,6 +74,10 @@
     '洽談中': { label: '洽談中', cls: 'bg-amber-100 text-amber-700' },
     '已成交': { label: '已成交', cls: 'bg-emerald-100 text-emerald-700' },
     '不follow': { label: '不follow', cls: 'bg-rose-50 text-rose-500' }
+  };
+  var LEAD_SOURCE = {
+    company: { label: '公司名單', cls: 'bg-sky-100 text-sky-700' },
+    self: { label: '自開發', cls: 'bg-emerald-100 text-emerald-700' }
   };
   var MEDIA_PRESETS = ['Meta','Google','LINE','Dcard','TikTok','Yahoo','Taboola','OTV／CTV','其他'];
   var FLIGHT_STATUS = {
@@ -119,6 +126,12 @@
     return datePart;
   }
   function dayDiff(s){ if(!s) return null; var d = parseDate(s); return Math.round((d - todayMid()) / 86400000); }
+  function shortDateBadge(dateStr){
+    var diff = dayDiff(dateStr);
+    if (diff === 0) return '今天';
+    if (diff === -1) return '昨天';
+    return fmtDate(dateStr);
+  }
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function yearMonthOf(s){ if(!s) return null; var p = s.split('-'); return { y: parseInt(p[0],10), m: parseInt(p[1],10) }; }
 
@@ -347,6 +360,7 @@
     var notesRes = await sb.from('daily_notes').select('*').order('note_date', { ascending: true }).order('created_at', { ascending: true });
     var tagsRes = await sb.from('tags').select('*');
     var leadsRes = await sb.from('leads').select('*').order('created_at', { ascending: true });
+    var leadContactsRes = await sb.from('lead_contacts').select('*').order('contact_date', { ascending: false }).order('created_at', { ascending: false });
     if (!res.error && res.data) {
       clients = res.data.map(function(c){ var copy = Object.assign({}, c); delete copy.campaigns; return copy; });
       campaigns = []; flights = [];
@@ -362,6 +376,7 @@
     dailyNotes = (!notesRes.error && notesRes.data) ? notesRes.data : [];
     tags = (!tagsRes.error && tagsRes.data) ? tagsRes.data : [];
     leads = (!leadsRes.error && leadsRes.data) ? leadsRes.data : [];
+    leadContacts = (!leadContactsRes.error && leadContactsRes.data) ? leadContactsRes.data : [];
     loaded = true; render();
   }
 
@@ -405,8 +420,14 @@
   };
 
   // ---- lead CRUD ----
-  window.tdOpenLeadModal = function(existingId){
-    var data = existingId ? Object.assign({}, leads.find(function(l){return l.id===existingId;})) : { status: '待聯繫' };
+  window.tdOpenLeadModal = function(existingId, duplicateFromId){
+    var data;
+    if (existingId) { data = Object.assign({}, leads.find(function(l){return l.id===existingId;})); }
+    else if (duplicateFromId) {
+      var src = leads.find(function(l){return l.id===duplicateFromId;});
+      data = Object.assign({}, src);
+      data.id = null; data.name = (src.name||'') + '（複製）'; data.status = '待聯繫'; data.next_followup_date = '';
+    } else { data = { status: '待聯繫' }; }
     modal_editing_id = existingId || null;
     modal = { type: 'lead', mode: existingId?'edit':'add', data: data };
     render();
@@ -415,9 +436,10 @@
     ev.preventDefault();
     var f = ev.target;
     var payload = {
-      name: f.name.value.trim(), contact_name: f.contact_name.value.trim(),
+      name: f.name.value.trim(), contact_name: f.contact_name.value.trim(), job_title: f.job_title.value.trim(),
       phone: f.phone.value.trim(), email: f.email.value.trim(), website: f.website.value.trim(),
-      status: f.status.value, contact_log: f.contact_log.value.trim()
+      status: f.status.value, source: f.source.value || null,
+      next_followup_date: f.next_followup_date.value || null
     };
     if (!payload.name) return;
     var editId = modal_editing_id;
@@ -427,10 +449,11 @@
     await loadAll();
   };
   window.tdDeleteLead = async function(id){
-    if (!confirm('刪除這筆名單？')) return;
+    if (!confirm('刪除這筆名單？聯繫紀錄也會一併刪除。')) return;
     await sb.from('leads').delete().eq('id', id);
     await loadAll();
   };
+  window.tdDuplicateLead = function(id){ tdOpenLeadModal(null, id); };
   window.tdConvertLeadToClient = async function(id){
     var lead = leads.find(function(l){return l.id===id;});
     if (!lead) return;
@@ -448,6 +471,28 @@
     await sb.from('leads').update({ status: '已成交' }).eq('id', id);
     await loadAll();
     tdSetView('clients');
+  };
+
+  // ---- lead contact records ----
+  function leadContactsOf(leadId){ return leadContacts.filter(function(c){ return c.lead_id === leadId; }); }
+  window.tdToggleLeadHistory = function(leadId){ expandedLeadHistory[leadId] = !expandedLeadHistory[leadId]; render(); };
+  window.tdOpenLeadContactModal = function(leadId){
+    modal = { type: 'leadContact', mode: 'add', data: { contact_date: todayStr() }, leadId: leadId };
+    render();
+  };
+  window.tdSubmitLeadContact = async function(ev){
+    ev.preventDefault();
+    var f = ev.target;
+    var content = f.content.value.trim();
+    if (!content) return;
+    var leadId = modal.leadId;
+    modal = null; render();
+    await sb.from('lead_contacts').insert({ lead_id: leadId, contact_date: f.contact_date.value || todayStr(), content: content });
+    await loadAll();
+  };
+  window.tdDeleteLeadContact = async function(id){
+    await sb.from('lead_contacts').delete().eq('id', id);
+    await loadAll();
   };
 
   // ---- campaign CRUD ----
@@ -984,60 +1029,199 @@
 
   function renderLeads(){
     var q = globalSearch.trim().toLowerCase();
-    var list = leads.filter(function(l){
-      if (!q) return true;
-      return (l.name + ' ' + (l.contact_name||'')).toLowerCase().indexOf(q) !== -1;
+    var bySearchSource = leads.filter(function(l){
+      if (leadFilterSource !== 'all' && (l.source || '') !== leadFilterSource) return false;
+      if (q) {
+        var contactText = leadContactsOf(l.id).map(function(c){return c.content;}).join(' ');
+        var hay = (l.name + ' ' + (l.contact_name||'') + ' ' + (l.phone||'') + ' ' + (l.email||'') + ' ' + contactText).toLowerCase();
+        if (hay.indexOf(q) === -1) return false;
+      }
+      return true;
     });
-    var html = '<div class="flex items-center gap-2 mb-4">' +
-      '<div class="text-sm text-slate-500 ml-auto">共 ' + list.length + ' 筆名單</div>' +
+
+    var statusCounts = {};
+    Object.keys(LEAD_STATUS).forEach(function(k){ statusCounts[k] = 0; });
+    bySearchSource.forEach(function(l){ var s = l.status || '待聯繫'; if (statusCounts[s] !== undefined) statusCounts[s]++; });
+
+    var filtered = bySearchSource.filter(function(l){ return leadFilterStatus === 'all' || l.status === leadFilterStatus; });
+    filtered = filtered.slice().sort(function(a,b){
+      if (leadSort === 'name') return (a.name||'').localeCompare(b.name||'', 'zh-Hant');
+      if (leadSort === 'created') return (b.created_at||'').localeCompare(a.created_at||'');
+      var la = leadContactsOf(a.id)[0], lb = leadContactsOf(b.id)[0];
+      var da = la ? la.contact_date : (a.created_at||'').slice(0,10);
+      var db = lb ? lb.contact_date : (b.created_at||'').slice(0,10);
+      return (db||'').localeCompare(da||'');
+    });
+
+    var totalFiltered = filtered.length;
+    var totalPages = Math.max(1, Math.ceil(totalFiltered / leadPageSize));
+    if (leadPage > totalPages) leadPage = totalPages;
+    var startIdx = (leadPage - 1) * leadPageSize;
+    var pageItems = filtered.slice(startIdx, startIdx + leadPageSize);
+
+    var toolbarHtml = '<div class="flex flex-wrap items-center gap-2 mb-3">' +
+      '<select onchange="tdSetLeadFilter(\'status\',this.value)" class="text-xs px-2 py-1.5 border border-slate-200 rounded-lg bg-white">' +
+        '<option value="all"' + (leadFilterStatus==='all'?' selected':'') + '>狀態：全部</option>' +
+        Object.keys(LEAD_STATUS).map(function(k){ return '<option value="'+k+'"'+(leadFilterStatus===k?' selected':'')+'>'+LEAD_STATUS[k].label+'</option>'; }).join('') +
+      '</select>' +
+      '<select onchange="tdSetLeadFilter(\'source\',this.value)" class="text-xs px-2 py-1.5 border border-slate-200 rounded-lg bg-white">' +
+        '<option value="all"' + (leadFilterSource==='all'?' selected':'') + '>來源：全部</option>' +
+        '<option value="company"' + (leadFilterSource==='company'?' selected':'') + '>公司名單</option>' +
+        '<option value="self"' + (leadFilterSource==='self'?' selected':'') + '>自開發</option>' +
+      '</select>' +
+      '<select onchange="tdSetLeadSort(this.value)" class="text-xs px-2 py-1.5 border border-slate-200 rounded-lg bg-white">' +
+        '<option value="lastContact"' + (leadSort==='lastContact'?' selected':'') + '>排序：最新聯繫</option>' +
+        '<option value="created"' + (leadSort==='created'?' selected':'') + '>排序：最新建立</option>' +
+        '<option value="name"' + (leadSort==='name'?' selected':'') + '>排序：公司名稱</option>' +
+      '</select>' +
+      '<div class="flex-1"></div>' +
       '<button onclick="tdOpenLeadModal()" class="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">＋ 新增名單</button>' +
     '</div>';
-    if (!list.length) return html + '<div class="text-sm text-slate-400 py-12 text-center bg-white border border-slate-200 rounded-xl">還沒有名單客戶，點右上角新增。</div>';
 
-    html += '<div class="space-y-2">';
-    list.forEach(function(l){
-      var st = LEAD_STATUS[l.status] || LEAD_STATUS['待聯繫'];
-      var key = 'lead:' + l.id;
-      var items = [
-        ['編輯', "tdToggleActionMenu('" + key + "'); tdOpenLeadModal('" + l.id + "')"],
-        ['刪除名單', "tdToggleActionMenu('" + key + "'); tdDeleteLead('" + l.id + "')", 'text-rose-500']
-      ];
-      var contactBits = [];
-      if (l.phone) contactBits.push('📞 ' + esc(l.phone));
-      if (l.email) contactBits.push('<a href="mailto:' + esc(l.email) + '" class="hover:underline">✉️ ' + esc(l.email) + '</a>');
-      if (l.website) contactBits.push('<a href="' + esc(l.website) + '" target="_blank" rel="noopener" class="hover:underline">🔗 官網</a>');
-      var logHtml = notesBlockHtml('lead', l.id, l.contact_log, '聯繫紀錄');
-      html += '<div class="bg-white border border-slate-200 rounded-xl p-3">' +
-        '<div class="flex items-center gap-2 flex-wrap">' +
-          '<span class="font-semibold text-sm">' + esc(l.name) + '</span>' +
-          (l.contact_name ? '<span class="text-xs text-slate-400">' + esc(l.contact_name) + '</span>' : '') +
-          statusBadge(st) +
-          '<div class="flex-1"></div>' +
-          (st.label !== '已成交' ? '<button onclick="tdConvertLeadToClient(\'' + l.id + '\')" class="text-xs px-2 py-1 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50">轉為正式客戶</button>' : '') +
-          actionsButtonHtml(key, items) +
-        '</div>' +
-        (contactBits.length ? '<div class="flex items-center gap-3 text-xs text-slate-500 mt-2">' + contactBits.join('') + '</div>' : '') +
-        (logHtml ? '<div class="mt-2">' + logHtml + '</div>' : '') +
-      '</div>';
-    });
-    html += '</div>';
-    return html;
+    var chipDefs = [['all','全部', bySearchSource.length]].concat(Object.keys(LEAD_STATUS).map(function(k){ return [k, LEAD_STATUS[k].label, statusCounts[k]]; }));
+    var chipsHtml = '<div class="flex flex-wrap gap-1.5 mb-4">' + chipDefs.map(function(c){
+      return '<button onclick="tdSetLeadFilter(\'status\',\'' + c[0] + '\')" class="text-xs px-3 py-1.5 rounded-full border ' + (leadFilterStatus===c[0] ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50') + '">' + c[1] + '（' + c[2] + '）</button>';
+    }).join('') + '</div>';
+
+    if (!leads.length) return toolbarHtml + '<div class="text-sm text-slate-400 py-12 text-center bg-white border border-slate-200 rounded-xl">還沒有名單客戶，點右上角新增。</div>';
+    if (!pageItems.length) return toolbarHtml + chipsHtml + '<div class="text-sm text-slate-400 py-12 text-center bg-white border border-slate-200 rounded-xl">沒有符合條件的名單。</div>';
+
+    var cardsHtml = '<div class="space-y-2">' + pageItems.map(function(l){ return leadCardHtml(l); }).join('') + '</div>';
+
+    var rangeStart = totalFiltered ? startIdx + 1 : 0;
+    var rangeEnd = Math.min(startIdx + leadPageSize, totalFiltered);
+    var pagerBtns = '';
+    if (totalPages > 1) {
+      if (totalPages <= 10) {
+        for (var i = 1; i <= totalPages; i++) {
+          pagerBtns += '<button onclick="tdSetLeadPage(' + i + ')" class="w-7 h-7 rounded text-xs ' + (i===leadPage?'bg-indigo-600 text-white':'hover:bg-slate-100 text-slate-600') + '">' + i + '</button>';
+        }
+      } else {
+        pagerBtns = '<span class="text-xs px-2 text-slate-500">第 ' + leadPage + ' / ' + totalPages + ' 頁</span>';
+      }
+    }
+    var paginationHtml = '<div class="flex flex-wrap items-center justify-between gap-2 mt-4 text-xs text-slate-500">' +
+      '<div class="flex items-center gap-2">每頁顯示' +
+        '<select onchange="tdSetLeadPageSize(this.value)" class="px-1.5 py-1 border border-slate-200 rounded-lg bg-white">' +
+          [20,50,100].map(function(n){ return '<option value="'+n+'"'+(leadPageSize===n?' selected':'')+'>'+n+'</option>'; }).join('') +
+        '</select>' +
+      '</div>' +
+      '<div>顯示 ' + rangeStart + '–' + rangeEnd + '，共 ' + totalFiltered + ' 筆</div>' +
+      '<div class="flex items-center gap-1">' +
+        (totalPages>1 ? '<button onclick="tdSetLeadPage(' + Math.max(1,leadPage-1) + ')" class="px-2 py-1 rounded hover:bg-slate-100">‹</button>' + pagerBtns + '<button onclick="tdSetLeadPage(' + Math.min(totalPages,leadPage+1) + ')" class="px-2 py-1 rounded hover:bg-slate-100">›</button>' : '') +
+      '</div>' +
+    '</div>';
+
+    return toolbarHtml + chipsHtml + cardsHtml + paginationHtml;
   }
+
+  function leadCardHtml(l){
+    var key = 'lead:' + l.id;
+    var st = LEAD_STATUS[l.status] || LEAD_STATUS['待聯繫'];
+    var srcMeta = l.source ? LEAD_SOURCE[l.source] : null;
+    var contactsSorted = leadContactsOf(l.id);
+    var latest = contactsSorted[0];
+    var expanded = !!expandedLeadHistory[l.id];
+    var items = [
+      ['編輯', "tdToggleActionMenu('" + key + "'); tdOpenLeadModal('" + l.id + "')"],
+      ['新增聯繫紀錄', "tdToggleActionMenu('" + key + "'); tdOpenLeadContactModal('" + l.id + "')"]
+    ];
+    if (st.label !== '已成交') items.push(['轉為正式客戶', "tdToggleActionMenu('" + key + "'); tdConvertLeadToClient('" + l.id + "')"]);
+    items.push(['複製', "tdToggleActionMenu('" + key + "'); tdDuplicateLead('" + l.id + "')"]);
+    items.push(['刪除名單', "tdToggleActionMenu('" + key + "'); tdDeleteLead('" + l.id + "')", 'text-rose-500']);
+
+    var leftHtml = '<div class="w-[35%] min-w-0 pr-3 border-r border-slate-100">' +
+      '<div class="flex items-center gap-1.5 flex-wrap">' +
+        '<span class="font-semibold text-sm truncate">' + esc(l.name) + '</span>' +
+        (srcMeta ? '<span class="text-xs font-semibold px-1.5 py-0.5 rounded-full ' + srcMeta.cls + '">' + srcMeta.label + '</span>' : '') +
+      '</div>' +
+      (l.contact_name || l.job_title ? '<div class="text-xs text-slate-500 mt-0.5">' + esc(l.contact_name||'') + (l.job_title?(' ／ '+esc(l.job_title)):'') + '</div>' : '') +
+      '<div class="text-xs text-slate-500 mt-1 space-y-0.5">' +
+        (l.phone ? '<div>📞 ' + esc(l.phone) + '</div>' : '') +
+        (l.email ? '<div><a href="mailto:' + esc(l.email) + '" class="hover:underline" onclick="event.stopPropagation()">✉️ ' + esc(l.email) + '</a></div>' : '') +
+        (l.website ? '<div><a href="' + esc(l.website) + '" target="_blank" rel="noopener" class="hover:underline" onclick="event.stopPropagation()">🔗 官網</a></div>' : '') +
+      '</div>' +
+    '</div>';
+
+    var centerInner;
+    if (!latest) {
+      centerInner = '<div class="text-sm text-slate-300">尚無聯繫紀錄</div>';
+    } else {
+      var historyRest = contactsSorted.slice(1);
+      centerInner = '<div class="flex items-center gap-2 text-xs text-slate-400 mb-1">' +
+          '<span>最新聯繫</span>' +
+          '<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-semibold">' + shortDateBadge(latest.contact_date) + '</span>' +
+        '</div>' +
+        '<div class="text-sm text-slate-700" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">' + esc(latest.content) + '</div>' +
+        (contactsSorted.length > 1 ? '<button onclick="event.stopPropagation(); tdToggleLeadHistory(\'' + l.id + '\')" class="text-xs text-indigo-600 hover:underline mt-1">' + (expanded?'收合紀錄':'查看歷史（' + contactsSorted.length + '）') + '</button>' : '') +
+        (expanded ? '<div class="mt-2 space-y-1.5 bg-slate-50 border border-slate-100 rounded-lg p-2" onclick="event.stopPropagation()">' +
+          contactsSorted.map(function(c){
+            return '<div class="flex items-start gap-2 text-xs">' +
+              '<span class="px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-500 shrink-0">' + shortDateBadge(c.contact_date) + '</span>' +
+              '<span class="text-slate-600 flex-1">' + esc(c.content) + '</span>' +
+              '<button onclick="if(confirm(\'刪除這筆聯繫紀錄？\'))tdDeleteLeadContact(\'' + c.id + '\')" class="text-slate-300 hover:text-rose-500">✕</button>' +
+            '</div>';
+          }).join('') +
+        '</div>' : '');
+    }
+    var centerHtml = '<div class="w-[40%] min-w-0 px-3 border-r border-slate-100">' + centerInner + '</div>';
+
+    var overdue = l.next_followup_date && dayDiff(l.next_followup_date) < 0;
+    var followHtml = l.next_followup_date
+      ? '<div class="text-xs ' + (overdue?'text-rose-600 font-semibold':'text-slate-500') + '">下次追蹤：' + fmtDate(l.next_followup_date) + (overdue?'（已過期）':'') + '</div>'
+      : '<div class="text-xs text-slate-300">尚未安排追蹤</div>';
+    var rightHtml = '<div class="w-[25%] min-w-0 pl-3">' +
+      '<div class="flex items-center justify-between mb-1.5">' +
+        statusBadge(st) +
+        '<div onclick="event.stopPropagation()">' + actionsButtonHtml(key, items) + '</div>' +
+      '</div>' +
+      followHtml +
+      '<div class="mt-1.5" onclick="event.stopPropagation()">' + tagsInlineHtml('lead', l.id) + '</div>' +
+    '</div>';
+
+    return '<div class="bg-white border border-slate-200 rounded-xl p-3 flex items-start cursor-pointer hover:border-slate-300" onclick="tdOpenLeadModal(\'' + l.id + '\')">' + leftHtml + centerHtml + rightHtml + '</div>';
+  }
+
+  window.tdSetLeadFilter = function(kind, val){
+    if (kind === 'status') leadFilterStatus = val;
+    if (kind === 'source') leadFilterSource = val;
+    leadPage = 1;
+    render();
+  };
+  window.tdSetLeadSort = function(val){ leadSort = val; render(); };
+  window.tdSetLeadPageSize = function(val){ leadPageSize = Number(val); leadPage = 1; render(); };
+  window.tdSetLeadPage = function(n){ leadPage = n; render(); };
+
   function renderLeadModal(m){
     var d = m.data;
     return '<form onsubmit="tdSubmitLead(event)" class="p-5 overflow-y-auto flex-1">' +
       fieldHtml('客戶名稱', textInput('name', d.name)) +
       '<div class="grid grid-cols-2 gap-x-3">' +
         fieldHtml('聯絡人', textInput('contact_name', d.contact_name)) +
-        fieldHtml('狀態', selectHtml('status', Object.keys(LEAD_STATUS).map(function(k){return [k, LEAD_STATUS[k].label];}), d.status)) +
+        fieldHtml('職稱', textInput('job_title', d.job_title)) +
         fieldHtml('聯絡電話', textInput('phone', d.phone)) +
         fieldHtml('信箱', textInput('email', d.email)) +
       '</div>' +
       fieldHtml('公司網址', textInput('website', d.website)) +
-      fieldHtml('聯繫紀錄', '<textarea name="contact_log" rows="3" class="' + inputClass() + '" placeholder="每行一筆，例如：7/30 打電話沒接通">' + esc(d.contact_log||'') + '</textarea>') +
+      '<div class="grid grid-cols-2 gap-x-3">' +
+        fieldHtml('狀態', selectHtml('status', Object.keys(LEAD_STATUS).map(function(k){return [k, LEAD_STATUS[k].label];}), d.status)) +
+        fieldHtml('來源（選填）', selectHtml('source', [['','不指定'],['company','公司名單'],['self','自開發']], d.source||'')) +
+      '</div>' +
+      fieldHtml('下次追蹤日期（選填）', dateInput('next_followup_date', d.next_followup_date)) +
       '<div class="flex gap-2 mt-4 sticky bottom-0 bg-white pt-2">' +
         '<button type="button" onclick="tdCloseModal()" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm">取消</button>' +
         '<button type="submit" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">' + (m.mode==='edit'?'儲存':'建立名單') + '</button>' +
+      '</div>' +
+    '</form>';
+  }
+  function renderLeadContactModal(m){
+    var d = m.data;
+    return '<form onsubmit="tdSubmitLeadContact(event)" class="p-5 overflow-y-auto flex-1">' +
+      fieldHtml('日期', dateInput('contact_date', d.contact_date)) +
+      fieldHtml('內容', '<textarea name="content" rows="3" class="' + inputClass() + '" placeholder="例如：打電話沒接通" autofocus></textarea>') +
+      '<div class="flex gap-2 mt-4">' +
+        '<button type="button" onclick="tdCloseModal()" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm">取消</button>' +
+        '<button type="submit" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">新增紀錄</button>' +
       '</div>' +
     '</form>';
   }
@@ -1360,9 +1544,9 @@
 
   function renderModal(){
     if (!modal) return '';
-    var title = { client:'客戶', campaign:'產品／活動案件', flight:'廣告檔期', link:'連結', tag:'標籤', lead:'名單客戶' }[modal.type];
-    var body = modal.type==='client' ? renderClientModal(modal) : modal.type==='campaign' ? renderCampaignModal(modal) : modal.type==='flight' ? renderFlightModal(modal) : modal.type==='tag' ? renderTagModal(modal) : modal.type==='lead' ? renderLeadModal(modal) : renderLinkModal(modal);
-    var isNarrow = modal.type === 'link' || modal.type === 'tag';
+    var title = { client:'客戶', campaign:'產品／活動案件', flight:'廣告檔期', link:'連結', tag:'標籤', lead:'名單客戶', leadContact:'聯繫紀錄' }[modal.type];
+    var body = modal.type==='client' ? renderClientModal(modal) : modal.type==='campaign' ? renderCampaignModal(modal) : modal.type==='flight' ? renderFlightModal(modal) : modal.type==='tag' ? renderTagModal(modal) : modal.type==='lead' ? renderLeadModal(modal) : modal.type==='leadContact' ? renderLeadContactModal(modal) : renderLinkModal(modal);
+    var isNarrow = modal.type === 'link' || modal.type === 'tag' || modal.type === 'leadContact';
     return '<div class="fixed inset-0 bg-slate-900/40 z-40 flex justify-end">' +
       '<div class="w-full ' + (isNarrow?'max-w-sm':'max-w-lg') + ' bg-white h-full flex flex-col">' +
         '<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">' +
