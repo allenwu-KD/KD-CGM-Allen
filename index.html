@@ -375,8 +375,8 @@
     links = (!linksRes.error && linksRes.data) ? linksRes.data : [];
     dailyNotes = (!notesRes.error && notesRes.data) ? notesRes.data : [];
     tags = (!tagsRes.error && tagsRes.data) ? tagsRes.data : [];
-    leads = (!leadsRes.error && leadsRes.data) ? leadsRes.data : [];
-    leadContacts = (!leadContactsRes.error && leadContactsRes.data) ? leadContactsRes.data : [];
+    leads = (!leadsRes.error && leadsRes.data) ? leadsRes.data : []; if (leadsRes.error) console.error('leads load error', leadsRes.error);
+    leadContacts = (!leadContactsRes.error && leadContactsRes.data) ? leadContactsRes.data : []; if (leadContactsRes.error) console.error('lead_contacts load error', leadContactsRes.error);
     loaded = true; render();
   }
 
@@ -444,8 +444,8 @@
     if (!payload.name) return;
     var editId = modal_editing_id;
     modal = null; modal_editing_id = null; render();
-    if (editId) { await sb.from('leads').update(payload).eq('id', editId); }
-    else { await sb.from('leads').insert(payload); }
+    var r = editId ? await sb.from('leads').update(payload).eq('id', editId) : await sb.from('leads').insert(payload);
+    if (r.error) { alert('儲存失敗：' + r.error.message); }
     await loadAll();
   };
   window.tdDeleteLead = async function(id){
@@ -487,7 +487,8 @@
     if (!content) return;
     var leadId = modal.leadId;
     modal = null; render();
-    await sb.from('lead_contacts').insert({ lead_id: leadId, contact_date: f.contact_date.value || todayStr(), content: content });
+    var r = await sb.from('lead_contacts').insert({ lead_id: leadId, contact_date: f.contact_date.value || todayStr(), content: content });
+    if (r.error) { alert('新增失敗：' + r.error.message); }
     await loadAll();
   };
   window.tdDeleteLeadContact = async function(id){
