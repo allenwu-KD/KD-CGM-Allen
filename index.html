@@ -30,7 +30,7 @@
 
   var loaded = false;
 
-  var clients = [], campaigns = [], flights = [], links = [], dailyNotes = [], tags = [];
+  var clients = [], campaigns = [], flights = [], links = [], dailyNotes = [], tags = [], leads = [];
   var activeView = 'clients';
   var globalSearch = '';
   var expandedClients = {};
@@ -44,6 +44,8 @@
   var viewOnlyActive = false;
   var reorderMode = false;
   var showCompletedHistory = false;
+  var expandedHistoryDays = {};
+  var expandedHistoryMonths = {};
   var viewOnlyTodo = false;
 
   var archiveYear = 'all', archiveMonth = 'all', archiveClient = 'all', archiveMedia = 'all', archiveSearch = '';
@@ -51,10 +53,10 @@
   var NAV = [
     { key: 'dashboard', label: '總覽' },
     { key: 'clients', label: '客戶管理' },
-    { key: 'campaigns', label: '產品／活動案件' },
     { key: 'flights', label: '廣告檔期' },
     { key: 'dueSoon', label: '即將到期' },
-    { key: 'archive', label: '已結束檔期' }
+    { key: 'archive', label: '已結束檔期' },
+    { key: 'leads', label: '名單客戶' }
   ];
 
   var CLIENT_STATUS = {
@@ -62,6 +64,13 @@
     potential: { label: '潛在客戶', cls: 'bg-sky-100 text-sky-700' },
     paused: { label: '暫停合作', cls: 'bg-slate-200 text-slate-600' },
     ended: { label: '已結束', cls: 'bg-rose-100 text-rose-700' }
+  };
+  var LEAD_STATUS = {
+    '待聯繫': { label: '待聯繫', cls: 'bg-slate-100 text-slate-600' },
+    '已聯繫': { label: '已聯繫', cls: 'bg-sky-100 text-sky-700' },
+    '洽談中': { label: '洽談中', cls: 'bg-amber-100 text-amber-700' },
+    '已成交': { label: '已成交', cls: 'bg-emerald-100 text-emerald-700' },
+    '不follow': { label: '不follow', cls: 'bg-rose-50 text-rose-500' }
   };
   var MEDIA_PRESETS = ['Meta','Google','LINE','Dcard','TikTok','Yahoo','Taboola','OTV／CTV','其他'];
   var FLIGHT_STATUS = {
@@ -337,6 +346,7 @@
     var linksRes = await sb.from('links').select('*');
     var notesRes = await sb.from('daily_notes').select('*').order('note_date', { ascending: true }).order('created_at', { ascending: true });
     var tagsRes = await sb.from('tags').select('*');
+    var leadsRes = await sb.from('leads').select('*').order('created_at', { ascending: true });
     if (!res.error && res.data) {
       clients = res.data.map(function(c){ var copy = Object.assign({}, c); delete copy.campaigns; return copy; });
       campaigns = []; flights = [];
@@ -351,6 +361,7 @@
     links = (!linksRes.error && linksRes.data) ? linksRes.data : [];
     dailyNotes = (!notesRes.error && notesRes.data) ? notesRes.data : [];
     tags = (!tagsRes.error && tagsRes.data) ? tagsRes.data : [];
+    leads = (!leadsRes.error && leadsRes.data) ? leadsRes.data : [];
     loaded = true; render();
   }
 
@@ -391,6 +402,52 @@
   window.tdMarkClientEnded = async function(id){
     await sb.from('clients').update({ status: 'ended' }).eq('id', id);
     await loadAll();
+  };
+
+  // ---- lead CRUD ----
+  window.tdOpenLeadModal = function(existingId){
+    var data = existingId ? Object.assign({}, leads.find(function(l){return l.id===existingId;})) : { status: '待聯繫' };
+    modal_editing_id = existingId || null;
+    modal = { type: 'lead', mode: existingId?'edit':'add', data: data };
+    render();
+  };
+  window.tdSubmitLead = async function(ev){
+    ev.preventDefault();
+    var f = ev.target;
+    var payload = {
+      name: f.name.value.trim(), contact_name: f.contact_name.value.trim(),
+      phone: f.phone.value.trim(), email: f.email.value.trim(), website: f.website.value.trim(),
+      status: f.status.value, contact_log: f.contact_log.value.trim()
+    };
+    if (!payload.name) return;
+    var editId = modal_editing_id;
+    modal = null; modal_editing_id = null; render();
+    if (editId) { await sb.from('leads').update(payload).eq('id', editId); }
+    else { await sb.from('leads').insert(payload); }
+    await loadAll();
+  };
+  window.tdDeleteLead = async function(id){
+    if (!confirm('刪除這筆名單？')) return;
+    await sb.from('leads').delete().eq('id', id);
+    await loadAll();
+  };
+  window.tdConvertLeadToClient = async function(id){
+    var lead = leads.find(function(l){return l.id===id;});
+    if (!lead) return;
+    if (!confirm('把「' + lead.name + '」轉為正式客戶？會在客戶管理新增一筆客戶資料。')) return;
+    var contactParts = [];
+    if (lead.phone) contactParts.push(lead.phone);
+    if (lead.email) contactParts.push(lead.email);
+    var r1 = await sb.from('clients').insert({
+      name: lead.name, contact_name: lead.contact_name || '', contact_info: contactParts.join(' ／ '), status: 'active'
+    }).select().single();
+    if (r1.error) { alert('轉換失敗：' + r1.error.message); return; }
+    if (lead.website) {
+      await sb.from('links').insert({ entity_type: 'client', entity_id: r1.data.id, label: '官網', url: lead.website, icon: '🔗' });
+    }
+    await sb.from('leads').update({ status: '已成交' }).eq('id', id);
+    await loadAll();
+    tdSetView('clients');
   };
 
   // ---- campaign CRUD ----
@@ -588,6 +645,14 @@
       return '<div class="px-4 py-2 text-xs font-semibold ' + headerCls + '">' + dateGroupLabel(key) + '（' + items.length + '）</div>' +
         items.map(function(n){ return noteRow(n, colorType); }).join('');
     }
+    function historyDayHtml(key, items){
+      var expanded = !!expandedHistoryDays[key];
+      return '<div class="px-4 py-2 text-xs font-semibold bg-slate-50 border-y border-slate-100 text-slate-500 cursor-pointer flex items-center gap-1.5" onclick="tdToggleHistoryDay(\'' + key + '\')">' +
+        '<span class="text-slate-300">' + (expanded?'▾':'▸') + '</span>' +
+        '<span>' + dateGroupLabel(key) + '（' + items.length + '）</span>' +
+      '</div>' +
+      (expanded ? items.map(function(n){ return noteRow(n, null); }).join('') : '');
+    }
 
     var visibleGroups = {}, historyGroups = {};
     allNoteKeys.forEach(function(key){
@@ -620,11 +685,31 @@
         }).join('')
       : '<div class="text-sm text-slate-400 py-8 text-center">還沒有待辦事項，在下面新增一筆</div>';
 
+    function historyMonthHtml(monthKey, dayKeys){
+      var expanded = !!expandedHistoryMonths[monthKey];
+      var totalDays = dayKeys.length;
+      var parts = monthKey.split('-');
+      var label = parts[0] + '年' + parseInt(parts[1],10) + '月';
+      return '<div class="px-4 py-2 text-xs font-semibold bg-slate-50 border-y border-slate-100 text-slate-500 cursor-pointer flex items-center gap-1.5" onclick="tdToggleHistoryMonth(\'' + monthKey + '\')">' +
+        '<span class="text-slate-300">' + (expanded?'▾':'▸') + '</span>' +
+        '<span>' + label + '（' + totalDays + ' 天）</span>' +
+      '</div>' +
+      (expanded ? dayKeys.map(function(key){ return historyDayHtml(key, historyGroups[key]); }).join('') : '');
+    }
+
+    var historyMonthGroups = {};
+    historyKeys.forEach(function(key){
+      var monthKey = key.slice(0, 7);
+      historyMonthGroups[monthKey] = historyMonthGroups[monthKey] || [];
+      historyMonthGroups[monthKey].push(key);
+    });
+    var historyMonthKeys = Object.keys(historyMonthGroups).sort().reverse();
+
     var historyToggleHtml = historyKeys.length
       ? '<div class="px-4 py-2 border-t border-slate-100">' +
           '<button onclick="tdToggleHistory()" class="text-xs text-slate-400 underline hover:text-slate-600">' + (showCompletedHistory?'收合歷史紀錄':'顯示歷史紀錄（' + historyKeys.length + ' 天）') + '</button>' +
         '</div>' +
-        (showCompletedHistory ? historyKeys.map(function(key){ return groupHtml(key, historyGroups[key], null); }).join('') : '')
+        (showCompletedHistory ? historyMonthKeys.map(function(mk){ return historyMonthHtml(mk, historyMonthGroups[mk]); }).join('') : '')
       : '';
 
     return cardsHtml +
@@ -750,6 +835,8 @@
     return dailyNotes.filter(function(n){ return !n.is_done && n.note_date <= today; }).length;
   }
   window.tdToggleHistory = function(){ showCompletedHistory = !showCompletedHistory; render(); };
+  window.tdToggleHistoryDay = function(key){ expandedHistoryDays[key] = !expandedHistoryDays[key]; render(); };
+  window.tdToggleHistoryMonth = function(key){ expandedHistoryMonths[key] = !expandedHistoryMonths[key]; render(); };
   window.tdDragStart = function(ev, id){
     ev.dataTransfer.setData('text/plain', id);
     ev.dataTransfer.effectAllowed = 'move';
@@ -893,6 +980,66 @@
     });
     html += '</div>';
     return html;
+  }
+
+  function renderLeads(){
+    var q = globalSearch.trim().toLowerCase();
+    var list = leads.filter(function(l){
+      if (!q) return true;
+      return (l.name + ' ' + (l.contact_name||'')).toLowerCase().indexOf(q) !== -1;
+    });
+    var html = '<div class="flex items-center gap-2 mb-4">' +
+      '<div class="text-sm text-slate-500 ml-auto">共 ' + list.length + ' 筆名單</div>' +
+      '<button onclick="tdOpenLeadModal()" class="text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">＋ 新增名單</button>' +
+    '</div>';
+    if (!list.length) return html + '<div class="text-sm text-slate-400 py-12 text-center bg-white border border-slate-200 rounded-xl">還沒有名單客戶，點右上角新增。</div>';
+
+    html += '<div class="space-y-2">';
+    list.forEach(function(l){
+      var st = LEAD_STATUS[l.status] || LEAD_STATUS['待聯繫'];
+      var key = 'lead:' + l.id;
+      var items = [
+        ['編輯', "tdToggleActionMenu('" + key + "'); tdOpenLeadModal('" + l.id + "')"],
+        ['刪除名單', "tdToggleActionMenu('" + key + "'); tdDeleteLead('" + l.id + "')", 'text-rose-500']
+      ];
+      var contactBits = [];
+      if (l.phone) contactBits.push('📞 ' + esc(l.phone));
+      if (l.email) contactBits.push('<a href="mailto:' + esc(l.email) + '" class="hover:underline">✉️ ' + esc(l.email) + '</a>');
+      if (l.website) contactBits.push('<a href="' + esc(l.website) + '" target="_blank" rel="noopener" class="hover:underline">🔗 官網</a>');
+      var logHtml = notesBlockHtml('lead', l.id, l.contact_log, '聯繫紀錄');
+      html += '<div class="bg-white border border-slate-200 rounded-xl p-3">' +
+        '<div class="flex items-center gap-2 flex-wrap">' +
+          '<span class="font-semibold text-sm">' + esc(l.name) + '</span>' +
+          (l.contact_name ? '<span class="text-xs text-slate-400">' + esc(l.contact_name) + '</span>' : '') +
+          statusBadge(st) +
+          '<div class="flex-1"></div>' +
+          (st.label !== '已成交' ? '<button onclick="tdConvertLeadToClient(\'' + l.id + '\')" class="text-xs px-2 py-1 rounded border border-indigo-200 text-indigo-600 hover:bg-indigo-50">轉為正式客戶</button>' : '') +
+          actionsButtonHtml(key, items) +
+        '</div>' +
+        (contactBits.length ? '<div class="flex items-center gap-3 text-xs text-slate-500 mt-2">' + contactBits.join('') + '</div>' : '') +
+        (logHtml ? '<div class="mt-2">' + logHtml + '</div>' : '') +
+      '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+  function renderLeadModal(m){
+    var d = m.data;
+    return '<form onsubmit="tdSubmitLead(event)" class="p-5 overflow-y-auto flex-1">' +
+      fieldHtml('客戶名稱', textInput('name', d.name)) +
+      '<div class="grid grid-cols-2 gap-x-3">' +
+        fieldHtml('聯絡人', textInput('contact_name', d.contact_name)) +
+        fieldHtml('狀態', selectHtml('status', Object.keys(LEAD_STATUS).map(function(k){return [k, LEAD_STATUS[k].label];}), d.status)) +
+        fieldHtml('聯絡電話', textInput('phone', d.phone)) +
+        fieldHtml('信箱', textInput('email', d.email)) +
+      '</div>' +
+      fieldHtml('公司網址', textInput('website', d.website)) +
+      fieldHtml('聯繫紀錄', '<textarea name="contact_log" rows="3" class="' + inputClass() + '" placeholder="每行一筆，例如：7/30 打電話沒接通">' + esc(d.contact_log||'') + '</textarea>') +
+      '<div class="flex gap-2 mt-4 sticky bottom-0 bg-white pt-2">' +
+        '<button type="button" onclick="tdCloseModal()" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm">取消</button>' +
+        '<button type="submit" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">' + (m.mode==='edit'?'儲存':'建立名單') + '</button>' +
+      '</div>' +
+    '</form>';
   }
 
   var FLIGHT_CHIPS = [
@@ -1213,8 +1360,8 @@
 
   function renderModal(){
     if (!modal) return '';
-    var title = { client:'客戶', campaign:'產品／活動案件', flight:'廣告檔期', link:'連結', tag:'標籤' }[modal.type];
-    var body = modal.type==='client' ? renderClientModal(modal) : modal.type==='campaign' ? renderCampaignModal(modal) : modal.type==='flight' ? renderFlightModal(modal) : modal.type==='tag' ? renderTagModal(modal) : renderLinkModal(modal);
+    var title = { client:'客戶', campaign:'產品／活動案件', flight:'廣告檔期', link:'連結', tag:'標籤', lead:'名單客戶' }[modal.type];
+    var body = modal.type==='client' ? renderClientModal(modal) : modal.type==='campaign' ? renderCampaignModal(modal) : modal.type==='flight' ? renderFlightModal(modal) : modal.type==='tag' ? renderTagModal(modal) : modal.type==='lead' ? renderLeadModal(modal) : renderLinkModal(modal);
     var isNarrow = modal.type === 'link' || modal.type === 'tag';
     return '<div class="fixed inset-0 bg-slate-900/40 z-40 flex justify-end">' +
       '<div class="w-full ' + (isNarrow?'max-w-sm':'max-w-lg') + ' bg-white h-full flex flex-col">' +
@@ -1255,10 +1402,10 @@
     switch(activeView){
       case 'dashboard': mainHtml = renderDashboard(); break;
       case 'clients': mainHtml = renderClients(); break;
-      case 'campaigns': mainHtml = renderCampaigns(); break;
       case 'flights': mainHtml = renderFlights(); break;
       case 'dueSoon': mainHtml = renderDueSoon(); break;
       case 'archive': mainHtml = renderArchive(); break;
+      case 'leads': mainHtml = renderLeads(); break;
       default: mainHtml = '';
     }
 
