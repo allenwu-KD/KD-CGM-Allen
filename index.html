@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>客戶廣告專案管理儀表板</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234f46e5'/%3E%3Ctext x='50' y='69' font-size='52' font-family='-apple-system,sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E客%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234f46e5'/%3E%3Ctext x='50' y='69' font-size='52' font-family='-apple-system,sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E客%3C/text%3E%3C/svg%3E">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -46,7 +48,7 @@
   var openMenuPos = null;
   var viewOnlyActive = false;
   var reorderMode = false;
-  var showCompletedHistory = false;
+  var showCompletedHistory = {};
   var expandedHistoryDays = {};
   var expandedHistoryMonths = {};
   var viewOnlyTodo = false;
@@ -244,7 +246,6 @@
       if (st === 'endingToday') todos.push({ label: '今日結束', f: f, urgent: true });
       if (st === 'upcoming') todos.push({ label: '即將開始', f: f, urgent: false });
       if (st === 'noEndDate') todos.push({ label: '沒有填寫結束日期', f: f, urgent: false });
-      if (!linksOf('flight', f.id).length && !linksOf('campaign', f.campaign_id).length) todos.push({ label: '缺少必要連結', f: f, urgent: false });
       if (f.billing_mode) {
         var bStatus = computeBillingStatus(f);
         if (f.billing_mode === 'prepay' && bStatus === '尚未開立發票') todos.push({ label: '預先請款尚未開立發票', f: f, urgent: true });
@@ -666,12 +667,6 @@
       '</div>';
     }
 
-    var noteGroups = {};
-    dailyNotes.forEach(function(n){
-      noteGroups[n.note_date] = noteGroups[n.note_date] || [];
-      noteGroups[n.note_date].push(n);
-    });
-    var allNoteKeys = Object.keys(noteGroups).sort();
     var COLOR_STYLES = {
       overdue: { header: 'bg-rose-50 border-y border-rose-100 text-rose-600', rowBg: 'bg-rose-50/60 border-l-2 border-l-rose-400', checkboxBorder: 'border-rose-400', text: 'text-rose-700' },
       today: { header: 'bg-blue-50 border-y border-blue-100 text-blue-600', rowBg: 'bg-blue-50/60 border-l-2 border-l-blue-400', checkboxBorder: 'border-blue-400', text: 'text-blue-700' },
@@ -679,96 +674,101 @@
     };
     function noteRow(n, colorType){
       var s = COLOR_STYLES[colorType];
-      return '<div class="flex items-center gap-3 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 ' + (s?s.rowBg:'') + '">' +
+      return '<div class="flex items-center gap-2 px-3 py-2 border-b border-slate-100 hover:bg-slate-50 ' + (s?s.rowBg:'') + '">' +
         '<button onclick="tdToggleDailyNoteDone(\'' + n.id + '\', ' + (n.is_done?'true':'false') + ')" class="w-4 h-4 rounded border ' + (n.is_done?'bg-emerald-500 border-emerald-500':(s?s.checkboxBorder:'border-slate-300')) + ' shrink-0 flex items-center justify-center text-white text-[10px]">' + (n.is_done?'✓':'') + '</button>' +
-        '<span class="text-sm ' + (n.is_done?'line-through text-slate-400':(s?s.text:'')) + '">' + esc(n.content) + '</span>' +
+        '<span class="text-xs ' + (n.is_done?'line-through text-slate-400':(s?s.text:'')) + '">' + esc(n.content) + '</span>' +
         '<button onclick="tdDeleteDailyNote(\'' + n.id + '\')" class="ml-auto text-slate-300 hover:text-rose-500 text-xs px-1">✕</button>' +
       '</div>';
     }
     function groupHtml(key, items, colorType){
       var s = COLOR_STYLES[colorType];
       var headerCls = s ? s.header : 'bg-slate-50 border-y border-slate-100 text-slate-500';
-      return '<div class="px-4 py-2 text-xs font-semibold ' + headerCls + '">' + dateGroupLabel(key) + '（' + items.length + '）</div>' +
+      return '<div class="px-3 py-1.5 text-xs font-semibold ' + headerCls + '">' + dateGroupLabel(key) + '（' + items.length + '）</div>' +
         items.map(function(n){ return noteRow(n, colorType); }).join('');
     }
-    function historyDayHtml(key, items){
-      var expanded = !!expandedHistoryDays[key];
-      return '<div class="px-4 py-2 text-xs font-semibold bg-slate-50 border-y border-slate-100 text-slate-500 cursor-pointer flex items-center gap-1.5" onclick="tdToggleHistoryDay(\'' + key + '\')">' +
+    function historyDayHtml(catKey, key, items){
+      var ek = catKey + '::' + key;
+      var expanded = !!expandedHistoryDays[ek];
+      return '<div class="px-3 py-1.5 text-xs font-semibold bg-slate-50 border-y border-slate-100 text-slate-500 cursor-pointer flex items-center gap-1.5" onclick="tdToggleHistoryDay(\'' + ek + '\')">' +
         '<span class="text-slate-300">' + (expanded?'▾':'▸') + '</span>' +
         '<span>' + dateGroupLabel(key) + '（' + items.length + '）</span>' +
       '</div>' +
       (expanded ? items.map(function(n){ return noteRow(n, null); }).join('') : '');
     }
+    function noteColumnHtml(category, label){
+      var catNotes = dailyNotes.filter(function(n){ return (n.category || 'other') === category; });
+      var noteGroups = {};
+      catNotes.forEach(function(n){ noteGroups[n.note_date] = noteGroups[n.note_date] || []; noteGroups[n.note_date].push(n); });
+      var allKeys = Object.keys(noteGroups).sort();
 
-    var visibleGroups = {}, historyGroups = {};
-    allNoteKeys.forEach(function(key){
-      var items = noteGroups[key];
-      var isPast = dayDiff(key) < 0;
-      if (isPast) {
-        var pending = items.filter(function(n){ return !n.is_done; });
-        var done = items.filter(function(n){ return n.is_done; });
-        if (pending.length) {
-          visibleGroups[key] = pending;
-          if (done.length) historyGroups[key] = done;
-        } else {
-          historyGroups[key] = items;
-        }
-      } else {
-        visibleGroups[key] = items;
-      }
-    });
-    var visibleKeys = Object.keys(visibleGroups).sort();
-    var historyKeys = Object.keys(historyGroups).sort();
+      var visibleGroups = {}, historyGroups = {};
+      allKeys.forEach(function(key){
+        var items = noteGroups[key];
+        var isPast = dayDiff(key) < 0;
+        if (isPast) {
+          var pending = items.filter(function(n){ return !n.is_done; });
+          var done = items.filter(function(n){ return n.is_done; });
+          if (pending.length) { visibleGroups[key] = pending; if (done.length) historyGroups[key] = done; }
+          else { historyGroups[key] = items; }
+        } else { visibleGroups[key] = items; }
+      });
+      var visibleKeys = Object.keys(visibleGroups).sort();
+      var historyKeys = Object.keys(historyGroups).sort();
 
-    var notesHtml = visibleKeys.length
-      ? visibleKeys.map(function(key){
-          var diff = dayDiff(key);
-          var items = visibleGroups[key];
-          var hasPending = items.some(function(n){ return !n.is_done; });
-          var colorType = null;
-          if (hasPending) { if (diff < 0) colorType = 'overdue'; else if (diff === 0) colorType = 'today'; else colorType = 'future'; }
-          return groupHtml(key, items, colorType);
-        }).join('')
-      : '<div class="text-sm text-slate-400 py-8 text-center">還沒有待辦事項，在下面新增一筆</div>';
+      var bodyHtml = visibleKeys.length
+        ? visibleKeys.map(function(key){
+            var diff = dayDiff(key);
+            var items = visibleGroups[key];
+            var hasPending = items.some(function(n){ return !n.is_done; });
+            var colorType = null;
+            if (hasPending) { if (diff < 0) colorType = 'overdue'; else if (diff === 0) colorType = 'today'; else colorType = 'future'; }
+            return groupHtml(key, items, colorType);
+          }).join('')
+        : '<div class="text-xs text-slate-300 py-6 text-center">目前沒有事項</div>';
 
-    function historyMonthHtml(monthKey, dayKeys){
-      var expanded = !!expandedHistoryMonths[monthKey];
-      var totalDays = dayKeys.length;
-      var parts = monthKey.split('-');
-      var label = parts[0] + '年' + parseInt(parts[1],10) + '月';
-      return '<div class="px-4 py-2 text-xs font-semibold bg-slate-50 border-y border-slate-100 text-slate-500 cursor-pointer flex items-center gap-1.5" onclick="tdToggleHistoryMonth(\'' + monthKey + '\')">' +
-        '<span class="text-slate-300">' + (expanded?'▾':'▸') + '</span>' +
-        '<span>' + label + '（' + totalDays + ' 天）</span>' +
-      '</div>' +
-      (expanded ? dayKeys.map(function(key){ return historyDayHtml(key, historyGroups[key]); }).join('') : '');
-    }
-
-    var historyMonthGroups = {};
-    historyKeys.forEach(function(key){
-      var monthKey = key.slice(0, 7);
-      historyMonthGroups[monthKey] = historyMonthGroups[monthKey] || [];
-      historyMonthGroups[monthKey].push(key);
-    });
-    var historyMonthKeys = Object.keys(historyMonthGroups).sort().reverse();
-
-    var historyToggleHtml = historyKeys.length
-      ? '<div class="px-4 py-2 border-t border-slate-100">' +
-          '<button onclick="tdToggleHistory()" class="text-xs text-slate-400 underline hover:text-slate-600">' + (showCompletedHistory?'收合歷史紀錄':'顯示歷史紀錄（' + historyKeys.length + ' 天）') + '</button>' +
+      var historyMonthGroups = {};
+      historyKeys.forEach(function(key){
+        var mk = key.slice(0, 7);
+        historyMonthGroups[mk] = historyMonthGroups[mk] || [];
+        historyMonthGroups[mk].push(key);
+      });
+      var historyMonthKeys = Object.keys(historyMonthGroups).sort().reverse();
+      var isHistoryShown = !!showCompletedHistory[category];
+      var historyBody = historyMonthKeys.map(function(mk){
+        var ek = category + '::' + mk;
+        var expanded = !!expandedHistoryMonths[ek];
+        var parts = mk.split('-');
+        var label2 = parts[0] + '年' + parseInt(parts[1],10) + '月';
+        return '<div class="px-3 py-1.5 text-xs font-semibold bg-slate-50 border-y border-slate-100 text-slate-500 cursor-pointer flex items-center gap-1.5" onclick="tdToggleHistoryMonth(\'' + ek + '\')">' +
+          '<span class="text-slate-300">' + (expanded?'▾':'▸') + '</span>' +
+          '<span>' + label2 + '（' + historyMonthGroups[mk].length + ' 天）</span>' +
         '</div>' +
-        (showCompletedHistory ? historyMonthKeys.map(function(mk){ return historyMonthHtml(mk, historyMonthGroups[mk]); }).join('') : '')
-      : '';
+        (expanded ? historyMonthGroups[mk].map(function(key){ return historyDayHtml(category, key, historyGroups[key]); }).join('') : '');
+      }).join('');
+      var historyToggleHtml = historyKeys.length
+        ? '<div class="px-3 py-1.5 border-t border-slate-100">' +
+            '<button onclick="tdToggleHistory(\'' + category + '\')" class="text-xs text-slate-400 underline hover:text-slate-600">' + (isHistoryShown?'收合歷史紀錄':'顯示歷史紀錄（' + historyKeys.length + ' 天）') + '</button>' +
+          '</div>' + (isHistoryShown ? historyBody : '')
+        : '';
+
+      return '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col">' +
+        '<div class="px-3 py-2.5 border-b border-slate-200 font-semibold text-sm">' + label + '</div>' +
+        '<div>' + bodyHtml + historyToggleHtml + '</div>' +
+        '<form onsubmit="tdAddDailyNote(event,\'' + category + '\')" class="flex flex-col gap-1.5 px-3 py-2.5 bg-slate-50 mt-auto">' +
+          '<input type="date" name="note_date" value="' + todayStr() + '" class="px-2 py-1 border border-slate-200 rounded-lg text-xs">' +
+          '<div class="flex gap-1.5">' +
+            '<input name="content" placeholder="新增一筆..." class="flex-1 min-w-0 px-2 py-1.5 border border-slate-200 rounded-lg text-xs">' +
+            '<button type="submit" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold shrink-0">新增</button>' +
+          '</div>' +
+        '</form>' +
+      '</div>';
+    }
+    var notesColumnsHtml = '<div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">' +
+      DAILY_NOTE_CATEGORIES.map(function(c){ return noteColumnHtml(c[0], c[1]); }).join('') +
+    '</div>';
 
     return cardsHtml +
-      '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden mb-4">' +
-        '<div class="px-4 py-3 border-b border-slate-200 font-semibold text-sm">每日待辦</div>' +
-        notesHtml +
-        historyToggleHtml +
-        '<form onsubmit="tdAddDailyNote(event)" class="flex items-center gap-2 px-3 py-2.5 bg-slate-50">' +
-          '<input type="date" name="note_date" value="' + todayStr() + '" class="px-2 py-1.5 border border-slate-200 rounded-lg text-xs">' +
-          '<input name="content" placeholder="輸入今天要做的事，按 Enter 新增..." class="flex-1 px-2.5 py-1.5 border border-slate-200 rounded-lg text-sm">' +
-          '<button type="submit" class="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold">新增</button>' +
-        '</form>' +
-      '</div>' +
+      notesColumnsHtml +
       '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">' +
         '<div class="px-4 py-3 border-b border-slate-200 font-semibold text-sm text-slate-500">資料待補完（' + housekeeping.length + '）</div>' +
         (housekeeping.length ? housekeeping.map(todoRow).join('') : '<div class="text-sm text-slate-400 py-8 text-center">沒有需要補的資料</div>') +
@@ -858,14 +858,20 @@
   window.tdToggleReorderMode = function(){ reorderMode = !reorderMode; render(); };
 
   // ---------------- 每日待辦（手寫記事） ----------------
-  window.tdAddDailyNote = async function(ev){
+  var DAILY_NOTE_CATEGORIES = [
+    ['production', '製作／提案'],
+    ['billing', '請款／發票'],
+    ['other', '其他']
+  ];
+  window.tdAddDailyNote = async function(ev, category){
     ev.preventDefault();
     var f = ev.target;
     var date = f.note_date.value || todayStr();
     var content = f.content.value.trim();
     if (!content) return;
     f.content.value = '';
-    await sb.from('daily_notes').insert({ note_date: date, content: content, is_done: false });
+    var r = await sb.from('daily_notes').insert({ note_date: date, content: content, is_done: false, category: category });
+    if (r.error) alert('新增失敗：' + r.error.message);
     await loadAll();
   };
   window.tdToggleDailyNoteDone = async function(id, current){
@@ -880,7 +886,7 @@
     var today = todayStr();
     return dailyNotes.filter(function(n){ return !n.is_done && n.note_date <= today; }).length;
   }
-  window.tdToggleHistory = function(){ showCompletedHistory = !showCompletedHistory; render(); };
+  window.tdToggleHistory = function(category){ showCompletedHistory[category] = !showCompletedHistory[category]; render(); };
   window.tdToggleHistoryDay = function(key){ expandedHistoryDays[key] = !expandedHistoryDays[key]; render(); };
   window.tdToggleHistoryMonth = function(key){ expandedHistoryMonths[key] = !expandedHistoryMonths[key]; render(); };
   window.tdDragStart = function(ev, id){
