@@ -53,7 +53,7 @@
   var expandedHistoryMonths = {};
   var viewOnlyTodo = false;
 
-  var archiveYear = 'all', archiveMonth = 'all', archiveClient = 'all', archiveMedia = 'all', archiveSearch = '';
+  var archiveYear = 'all', archiveMonth = 'all', archiveClient = 'all', archiveMedia = 'all', archiveBilling = 'all', archiveSearch = '';
 
   var NAV = [
     { key: 'dashboard', label: '總覽' },
@@ -806,7 +806,7 @@
     });
   }
   function campaignBadge(camp){
-    var fl = flightsOfCampaign(camp.id);
+    var fl = flightsOfCampaign(camp.id).filter(function(f){ return computeStatus(f) !== 'ended'; });
     if (!fl.length) return '';
     var billingOrder = ['尚未開立發票', '等待請款', '已開立發票', '已送請款'];
     for (var i = 0; i < billingOrder.length; i++) {
@@ -965,9 +965,14 @@
           notesBlockHtml('client', c.id, c.handover_notes, '交接重點') +
           '<div onclick="event.stopPropagation()">' + linksSectionHtml('client', c.id, true) + '</div>' +
         '</div>';
-        var camps = campaignsOfClient(c.id);
+        var allCamps = campaignsOfClient(c.id);
+        var camps = allCamps.filter(function(camp){
+          var fls = flightsOfCampaign(camp.id);
+          return !(fls.length && fls.every(function(f){ return computeStatus(f) === 'ended'; }));
+        });
         html += '<div class="px-4 pb-4 space-y-3">';
-        if (!camps.length) html += '<div class="text-xs text-slate-400 py-3">還沒有產品／活動案件。</div>';
+        if (!allCamps.length) html += '<div class="text-xs text-slate-400 py-3">還沒有產品／活動案件。</div>';
+        else if (!camps.length) html += '<div class="text-xs text-slate-400 py-3">這個客戶的案件檔期都已結束，可在「已結束檔期」頁面查看。</div>';
         camps.forEach(function(camp){
           var campExpanded = expandedCampaigns.hasOwnProperty(camp.id) ? expandedCampaigns[camp.id] : campaignHasActivity(camp.id);
           var allFl = flightsOfCampaign(camp.id);
@@ -1305,6 +1310,10 @@
       if (archiveMonth !== 'all' && (!ym || String(ym.m) !== archiveMonth)) return false;
       if (archiveClient !== 'all' && (!cli || cli.id !== archiveClient)) return false;
       if (archiveMedia !== 'all' && mediaLabel(f) !== archiveMedia) return false;
+      if (archiveBilling !== 'all') {
+        if (archiveBilling === 'unpaid') { if (!f.billing_mode || f.payment_received) return false; }
+        else if (computeBillingStatus(f) !== archiveBilling) return false;
+      }
       if (q) {
         var hay = ((cli?cli.name:'') + ' ' + (camp?camp.name:'') + ' ' + (f.flight_name||'') + ' ' + mediaLabel(f)).toLowerCase();
         if (hay.indexOf(q) === -1) return false;
@@ -1334,6 +1343,11 @@
       '<select onchange="tdSetArchiveFilter(\'media\',this.value)" class="text-xs px-2 py-1.5 border border-slate-200 rounded-lg">' +
         '<option value="all">全部媒體</option>' + mediaOptions.map(function(m){return '<option value="'+esc(m)+'"'+(archiveMedia===m?' selected':'')+'>'+esc(m)+'</option>';}).join('') +
       '</select>' +
+      '<select onchange="tdSetArchiveFilter(\'billing\',this.value)" class="text-xs px-2 py-1.5 border border-slate-200 rounded-lg">' +
+        [['all','全部請款狀態'],['unpaid','尚未收款（全部）'],['尚未開立發票','尚未開立發票'],['已開立發票','已開立發票'],['已送請款','已送請款'],['已收款','已收款']].map(function(o){
+          return '<option value="'+o[0]+'"'+(archiveBilling===o[0]?' selected':'')+'>'+o[1]+'</option>';
+        }).join('') +
+      '</select>' +
       '<input placeholder="關鍵字搜尋..." value="' + esc(archiveSearch) + '" oninput="tdSetArchiveFilter(\'search\',this.value)" class="text-xs px-2 py-1.5 border border-slate-200 rounded-lg flex-1 min-w-[160px]">' +
     '</div>';
 
@@ -1354,12 +1368,16 @@
         var rows = byClient[cliId].map(function(f){
           var camp = campaigns.find(function(c){return c.id===f.campaign_id;});
           return '<div class="flex items-center gap-3 px-3 py-2 border-t border-slate-100 text-sm">' +
-            '<span class="w-32 truncate text-slate-500 text-xs">' + esc(camp?camp.name:'') + '</span>' +
-            '<span class="w-16 text-xs px-1.5 py-0.5 rounded border border-slate-200 text-slate-500 text-center">' + esc(mediaLabel(f)) + '</span>' +
-            '<span class="w-28 text-xs text-slate-500 mono">' + fmtDate(f.start_date) + ' – ' + fmtDate(f.end_date) + '</span>' +
-            '<div onclick="event.stopPropagation()">' + linksSectionHtml('flight', f.id, true) + '</div>' +
-            (f.notes ? '<span class="text-xs text-slate-400 truncate flex-1">' + esc(f.notes) + '</span>' : '<div class="flex-1"></div>') +
-            '<button onclick="tdOpenFlightModal(\'' + f.campaign_id + '\',\'' + f.id + '\')" class="text-xs text-indigo-600 hover:underline">查看詳情</button>' +
+            '<div class="w-52 shrink-0 min-w-0">' +
+              '<div class="text-sm font-semibold truncate" title="' + esc(f.flight_name || mediaLabel(f)) + '">' + esc(f.flight_name || mediaLabel(f)) + '</div>' +
+              '<div class="text-xs text-slate-400 truncate" title="' + esc(camp?camp.name:'') + '">' + esc(camp?camp.name:'') + '</div>' +
+            '</div>' +
+            '<div class="flex-1 min-w-0 flex items-center flex-wrap gap-1.5">' + moneyBadgeHtml(f) + billingBadgeHtml(f) + '</div>' +
+            '<span class="w-16 shrink-0 text-xs px-1.5 py-0.5 rounded border border-slate-200 text-slate-500 text-center truncate">' + esc(mediaLabel(f)) + '</span>' +
+            '<span class="w-28 shrink-0 text-sm font-semibold text-slate-900 mono">' + fmtDate(f.start_date) + '–' + fmtDate(f.end_date) + '</span>' +
+            '<div class="min-w-0" onclick="event.stopPropagation()">' + linksSectionHtml('flight', f.id, true) + '</div>' +
+            (f.notes ? '<span class="text-xs text-slate-400 truncate max-w-[160px]" title="' + esc(f.notes) + '">' + esc(String(f.notes).split('\n')[0]) + '</span>' : '') +
+            '<button onclick="tdOpenFlightModal(\'' + f.campaign_id + '\',\'' + f.id + '\')" class="text-xs text-indigo-600 hover:underline shrink-0">查看詳情</button>' +
           '</div>';
         }).join('');
         return '<div class="mb-2"><div class="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-50">' + esc(cli?cli.name:'未知客戶') + '</div>' + rows + '</div>';
@@ -1377,6 +1395,7 @@
     else if (kind==='month') archiveMonth = val;
     else if (kind==='client') archiveClient = val;
     else if (kind==='media') archiveMedia = val;
+    else if (kind==='billing') archiveBilling = val;
     else if (kind==='search') archiveSearch = val;
     render();
   };
