@@ -134,7 +134,7 @@
     if (diff === 0) return '今天・' + datePart;
     if (diff === 1) return '明天・' + datePart;
     if (diff < 0) return '已過期・' + datePart;
-    return datePart;
+    return datePart + '・' + diff + ' 天後';
   }
   function dayDiff(s){ if(!s) return null; var d = parseDate(s); return Math.round((d - todayMid()) / 86400000); }
   function shortDateBadge(dateStr){
@@ -753,7 +753,7 @@
             var items = visibleGroups[key];
             var hasPending = items.some(function(n){ return !n.is_done; });
             var colorType = null;
-            if (hasPending) { if (diff < 0) colorType = 'overdue'; else if (diff === 0) colorType = 'today'; else colorType = 'future'; }
+            if (hasPending) { if (diff < 0) colorType = 'overdue'; else if (diff === 0) colorType = 'today'; else if (diff <= 7) colorType = 'future'; }
             return groupHtml(key, items, colorType);
           }).join('')
         : '<div class="text-xs text-slate-300 py-6 text-center">目前沒有事項</div>';
