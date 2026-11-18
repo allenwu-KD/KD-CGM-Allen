@@ -2,14 +2,20 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#4f46e5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="客戶管理">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>客戶廣告專案管理儀表板</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234f46e5'/%3E%3Ctext x='50' y='69' font-size='52' font-family='-apple-system,sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E客%3C/text%3E%3C/svg%3E">
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234f46e5'/%3E%3Ctext x='50' y='69' font-size='52' font-family='-apple-system,sans-serif' font-weight='700' fill='white' text-anchor='middle'%3E客%3C/text%3E%3C/svg%3E">
+<link rel="apple-touch-icon" href="data:image/png;base64,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">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif; }
+  .app-h { height: 100vh; height: 100dvh; }
   .mono { font-family: "SFMono-Regular", Consolas, Menlo, monospace; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
@@ -32,7 +38,7 @@
 
   var loaded = false;
 
-  var clients = [], campaigns = [], flights = [], links = [], dailyNotes = [], tags = [], leads = [], leadContacts = [];
+  var clients = [], campaigns = [], flights = [], links = [], dailyNotes = [], tags = [], leads = [], leadContacts = [], recurringNotes = [];
   var leadFilterStatus = 'all', leadFilterSource = 'all', leadSort = 'lastContact';
   var leadPageSize = 20, leadPage = 1;
   var expandedLeadHistory = {};
@@ -49,6 +55,7 @@
   var viewOnlyActive = false;
   var reorderMode = false;
   var showCompletedHistory = {};
+  var mobileNoteTab = 'all';
   var expandedHistoryDays = {};
   var expandedHistoryMonths = {};
   var viewOnlyTodo = false;
@@ -113,7 +120,9 @@
   // ---------------- helpers ----------------
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
   function todayMid(){ var d = new Date(); d.setHours(0,0,0,0); return d; }
-  function todayStr(){ return new Date().toISOString().slice(0,10); }
+  function isoOf(d){ return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function todayStr(){ return isoOf(new Date()); }
+  function addDaysTo(d, n){ return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
   function parseDate(s){ if(!s) return null; var p = s.split('-'); return new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)); }
   function fmtDate(s){ if(!s) return '—'; var d = parseDate(s); return (d.getMonth()+1) + '/' + d.getDate(); }
   var WEEKDAY_CN = ['日','一','二','三','四','五','六'];
@@ -354,12 +363,13 @@
   }
 
   // ---------------- data ----------------
-  async function loadAll(){
-    loaded = false; render();
+  async function loadAll(silent){
+    if (!silent) { loaded = false; render(); }
     var res = await sb.from('clients').select('*, campaigns(*, ad_flights(*))').order('sort_order', { ascending: true, nullsFirst: false }).order('created_at', { ascending: true });
     var linksRes = await sb.from('links').select('*');
     var notesRes = await sb.from('daily_notes').select('*').order('note_date', { ascending: true }).order('created_at', { ascending: true });
     var tagsRes = await sb.from('tags').select('*');
+    var recurRes = await sb.from('recurring_notes').select('*').order('created_at', { ascending: true });
     var leadsRes = await sb.from('leads').select('*').order('created_at', { ascending: true });
     var leadContactsRes = await sb.from('lead_contacts').select('*').order('contact_date', { ascending: false }).order('created_at', { ascending: false });
     if (!res.error && res.data) {
@@ -376,8 +386,13 @@
     links = (!linksRes.error && linksRes.data) ? linksRes.data : [];
     dailyNotes = (!notesRes.error && notesRes.data) ? notesRes.data : [];
     tags = (!tagsRes.error && tagsRes.data) ? tagsRes.data : [];
+    recurringNotes = (!recurRes.error && recurRes.data) ? recurRes.data : [];
     leads = (!leadsRes.error && leadsRes.data) ? leadsRes.data : []; if (leadsRes.error) console.error('leads load error', leadsRes.error);
     leadContacts = (!leadContactsRes.error && leadContactsRes.data) ? leadContactsRes.data : []; if (leadContactsRes.error) console.error('lead_contacts load error', leadContactsRes.error);
+    if (await generateRecurring()) {
+      var again = await sb.from('daily_notes').select('*').order('note_date', { ascending: true }).order('created_at', { ascending: true });
+      if (!again.error && again.data) dailyNotes = again.data;
+    }
     loaded = true; render();
   }
 
@@ -619,9 +634,9 @@
     var notesHtml = notesBlockHtml('flight', f.id, f.notes, '重點事項');
     return (
       '<div class="border border-slate-200 rounded-lg bg-white hover:border-slate-300 cursor-pointer" onclick="tdOpenFlightModal(\'' + f.campaign_id + '\',\'' + f.id + '\')">' +
-        '<div class="flex items-center gap-3 px-3 py-2.5">' +
+        '<div class="flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5">' +
           (showCampaignClient ? '<div class="w-40 shrink-0 truncate text-xs text-slate-500">' + esc(cli?cli.name:'') + ' ／ ' + esc(camp?camp.name:'') + '</div>' : '') +
-          '<div class="flex-1 min-w-0 flex items-center flex-wrap gap-1.5">' +
+          '<div class="basis-full md:basis-0 flex-1 min-w-0 flex items-center flex-wrap gap-1.5">' +
             '<span class="text-sm font-semibold truncate" title="' + esc(title) + '">' + esc(title) + '</span>' +
             '<span class="text-xs font-semibold px-2 py-0.5 rounded-full ' + stMeta.cls + '">' + statusLabelText(f) + '</span>' +
             moneyBadgeHtml(f) +
@@ -650,8 +665,8 @@
       ['合作中客戶數量', activeCount], ['執行中檔期數量', runningCount], ['7天內即將結束', dueSoonCount],
       ['即將開始', upcomingCount], ['尚未發單', noBrief], ['已結束檔期', endedCount]
     ];
-    var cardsHtml = '<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">' + cards.map(function(c){
-      return '<div class="bg-white border border-slate-200 rounded-xl p-4"><div class="text-2xl font-bold text-slate-800">' + c[1] + '</div><div class="text-xs text-slate-500 mt-1">' + c[0] + '</div></div>';
+    var cardsHtml = '<div class="order-2 md:order-1 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3 mt-2 mb-4 md:mt-0 md:mb-6">' + cards.map(function(c){
+      return '<div class="bg-white border border-slate-200 rounded-xl p-3 md:p-4"><div class="text-2xl font-bold text-slate-800">' + c[1] + '</div><div class="text-xs text-slate-500 mt-1">' + c[0] + '</div></div>';
     }).join('') + '</div>';
 
     var allTodos = computeTodos();
@@ -672,19 +687,36 @@
       today: { header: 'bg-blue-50 border-y border-blue-100 text-blue-600', rowBg: 'bg-blue-50/60 border-l-2 border-l-blue-400', checkboxBorder: 'border-blue-400', text: 'text-blue-700' },
       future: { header: 'bg-orange-50 border-y border-orange-100 text-orange-700', rowBg: 'bg-orange-50/60 border-l-2 border-l-orange-300', checkboxBorder: 'border-orange-400', text: 'text-orange-700' }
     };
+    function sortImportant(items){
+      return items.slice().sort(function(a, b){ return (b.important ? 1 : 0) - (a.important ? 1 : 0); });
+    }
     function noteRow(n, colorType){
       var s = COLOR_STYLES[colorType];
+      var key = 'note:' + n.id;
+      var dd = dayDiff(n.note_date);
+      var items = [['編輯', "tdToggleActionMenu('" + key + "'); tdOpenNoteModal('" + n.id + "')"]];
+      if (!n.is_done) {
+        items.push(['延到明天', "tdToggleActionMenu('" + key + "'); tdPostponeNote('" + n.id + "','tomorrow')"]);
+        items.push(['延到下週一', "tdToggleActionMenu('" + key + "'); tdPostponeNote('" + n.id + "','nextweek')"]);
+      }
+      items.push([n.important ? '取消重要' : '標為重要', "tdToggleActionMenu('" + key + "'); tdToggleNoteImportant('" + n.id + "')"]);
+      items.push(['刪除', "tdToggleActionMenu('" + key + "'); tdDeleteDailyNote('" + n.id + "')", 'text-rose-500']);
+      var quickPostpone = (!n.is_done && dd !== null && dd <= 0)
+        ? '<button onclick="tdPostponeNote(\'' + n.id + '\',\'tomorrow\')" class="text-[10px] px-1.5 py-1 rounded border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 whitespace-nowrap">→明天</button>'
+        : '';
       return '<div class="flex items-center gap-2 px-3 py-2 border-b border-slate-100 hover:bg-slate-50 ' + (s?s.rowBg:'') + '">' +
         '<button onclick="tdToggleDailyNoteDone(\'' + n.id + '\', ' + (n.is_done?'true':'false') + ')" class="w-4 h-4 rounded border ' + (n.is_done?'bg-emerald-500 border-emerald-500':(s?s.checkboxBorder:'border-slate-300')) + ' shrink-0 flex items-center justify-center text-white text-[10px]">' + (n.is_done?'✓':'') + '</button>' +
-        '<span class="text-xs ' + (n.is_done?'line-through text-slate-400':(s?s.text:'')) + '">' + esc(n.content) + '</span>' +
-        '<button onclick="tdDeleteDailyNote(\'' + n.id + '\')" class="ml-auto text-slate-300 hover:text-rose-500 text-xs px-1">✕</button>' +
+        '<button onclick="tdToggleNoteImportant(\'' + n.id + '\')" title="標為重要" class="shrink-0 text-sm leading-none ' + (n.important ? 'text-amber-500' : 'text-slate-200 hover:text-amber-400') + '">' + (n.important ? '★' : '☆') + '</button>' +
+        '<span onclick="tdOpenNoteModal(\'' + n.id + '\')" class="flex-1 min-w-0 break-words cursor-pointer text-xs ' + (n.is_done?'line-through text-slate-400':(s?s.text:'')) + ((n.important && !n.is_done) ? ' font-semibold' : '') + '">' +
+          (n.recurring_id ? '<span class="text-[10px] text-slate-400 mr-1">🔁</span>' : '') + esc(n.content) + '</span>' +
+        '<div class="shrink-0 flex items-center gap-1">' + quickPostpone + actionsButtonHtml(key, items) + '</div>' +
       '</div>';
     }
     function groupHtml(key, items, colorType){
       var s = COLOR_STYLES[colorType];
       var headerCls = s ? s.header : 'bg-slate-50 border-y border-slate-100 text-slate-500';
       return '<div class="px-3 py-1.5 text-xs font-semibold ' + headerCls + '">' + dateGroupLabel(key) + '（' + items.length + '）</div>' +
-        items.map(function(n){ return noteRow(n, colorType); }).join('');
+        sortImportant(items).map(function(n){ return noteRow(n, colorType); }).join('');
     }
     function historyDayHtml(catKey, key, items){
       var ek = catKey + '::' + key;
@@ -751,28 +783,40 @@
           '</div>' + (isHistoryShown ? historyBody : '')
         : '';
 
-      return '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden flex flex-col">' +
+      var colVisible = (mobileNoteTab === 'all' || mobileNoteTab === category);
+      return '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden flex-col ' + (colVisible ? 'flex' : 'hidden md:flex') + '">' +
         '<div class="px-3 py-2.5 border-b border-slate-200 font-semibold text-sm">' + label + '</div>' +
         '<div>' + bodyHtml + historyToggleHtml + '</div>' +
         '<form onsubmit="tdAddDailyNote(event,\'' + category + '\')" class="flex flex-col gap-1.5 px-3 py-2.5 bg-slate-50 mt-auto">' +
           '<input type="date" name="note_date" value="' + todayStr() + '" class="px-2 py-1 border border-slate-200 rounded-lg text-xs">' +
           '<div class="flex gap-1.5">' +
-            '<input name="content" placeholder="新增一筆..." class="flex-1 min-w-0 px-2 py-1.5 border border-slate-200 rounded-lg text-xs">' +
+            '<input name="content" placeholder="新增一筆（例：明天 寄報價）" class="flex-1 min-w-0 px-2 py-1.5 border border-slate-200 rounded-lg text-xs">' +
             '<button type="submit" class="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold shrink-0">新增</button>' +
           '</div>' +
         '</form>' +
       '</div>';
     }
-    var notesColumnsHtml = '<div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">' +
-      DAILY_NOTE_CATEGORIES.map(function(c){ return noteColumnHtml(c[0], c[1]); }).join('') +
+    var pendingByCat = function(key){
+      return dailyNotes.filter(function(n){ return !n.is_done && (key === 'all' || (n.category || 'other') === key); }).length;
+    };
+    var noteTabsHtml = '<div class="md:hidden flex gap-1.5 overflow-x-auto flex-1 min-w-0">' +
+      [['all', '全部']].concat(DAILY_NOTE_CATEGORIES).map(function(t){
+        var on = mobileNoteTab === t[0];
+        return '<button onclick="tdSetNoteTab(\'' + t[0] + '\')" class="text-xs px-3 py-1.5 rounded-full border whitespace-nowrap ' + (on ? 'bg-slate-800 text-white border-slate-800' : 'bg-white border-slate-200 text-slate-600') + '">' + t[1] + '（' + pendingByCat(t[0]) + '）</button>';
+      }).join('') +
     '</div>';
+    var notesColumnsHtml = '<div class="order-1 md:order-2"><div class="flex items-center gap-2 mb-3">' + noteTabsHtml +
+      '<button onclick="tdOpenRecurringModal()" class="ml-auto shrink-0 text-xs text-slate-500 hover:text-indigo-600">🔁 重複待辦（' + recurringNotes.length + '）</button></div>' +
+      '<div class="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">' +
+        DAILY_NOTE_CATEGORIES.map(function(c){ return noteColumnHtml(c[0], c[1]); }).join('') +
+      '</div></div>';
 
-    return cardsHtml +
+    return '<div class="flex flex-col">' + cardsHtml +
       notesColumnsHtml +
-      '<div class="bg-white border border-slate-200 rounded-xl overflow-hidden">' +
+      '<div class="order-3 bg-white border border-slate-200 rounded-xl overflow-hidden">' +
         '<div class="px-4 py-3 border-b border-slate-200 font-semibold text-sm text-slate-500">資料待補完（' + housekeeping.length + '）</div>' +
         (housekeeping.length ? housekeeping.map(todoRow).join('') : '<div class="text-sm text-slate-400 py-8 text-center">沒有需要補的資料</div>') +
-      '</div>';
+      '</div></div>';
   }
 
   var CLIENT_COLORS = [
@@ -863,30 +907,174 @@
     ['billing', '結案／發票'],
     ['other', '其他']
   ];
+  // 輸入框的快速語法：「! 」開頭＝重要；「明天／後天／3天後／週五／下週一／11/25／11月25日」開頭＝自動帶日期
+  function parseQuickInput(text){
+    var rest = String(text).trim(), important = false, date = null, m;
+    var today = todayMid();
+    for (var guard = 0; guard < 4; guard++) {
+      var before = rest;
+      if ((m = rest.match(/^[!！★☆]\s*/))) { important = true; rest = rest.slice(m[0].length); }
+      if (!date) {
+        var d = null, len = 0;
+        if ((m = rest.match(/^(大後天|後天|明天|明日|今天|今日)\s*[:：,，、]?\s*/))) {
+          var offs = { '今天': 0, '今日': 0, '明天': 1, '明日': 1, '後天': 2, '大後天': 3 };
+          d = addDaysTo(today, offs[m[1]]); len = m[0].length;
+        } else if ((m = rest.match(/^(\d{1,3})\s*天後(?=\s|[:：,，、]|$)\s*[:：,，、]?\s*/))) {
+          d = addDaysTo(today, parseInt(m[1], 10)); len = m[0].length;
+        } else if ((m = rest.match(/^(下)?(?:週|周|星期|禮拜)([一二三四五六日天])\s*[:：,，、]?\s*/))) {
+          var wds = { '日': 0, '天': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6 };
+          var wd = wds[m[2]], dow = today.getDay();
+          if (m[1]) { var toMon = ((1 - dow + 7) % 7) || 7; d = addDaysTo(today, toMon + ((wd + 6) % 7)); }
+          else { d = addDaysTo(today, (wd - dow + 7) % 7); }
+          len = m[0].length;
+        } else if ((m = rest.match(/^(\d{1,2})\/(\d{1,2})(?![\d\/\-~～–—])\s*[:：,，、]?\s*/)) || (m = rest.match(/^(\d{1,2})月(\d{1,2})[日號号]?(?!\d)\s*[:：,，、]?\s*/))) {
+          var mo = parseInt(m[1], 10), da = parseInt(m[2], 10);
+          var cand = new Date(today.getFullYear(), mo - 1, da);
+          if (mo >= 1 && mo <= 12 && cand.getMonth() === mo - 1) {
+            if ((today - cand) / 86400000 > 60) cand = new Date(today.getFullYear() + 1, mo - 1, da);
+            d = cand; len = m[0].length;
+          }
+        }
+        if (d) { date = isoOf(d); rest = rest.slice(len); }
+      }
+      if (rest === before) break;
+    }
+    return { content: rest.trim(), date: date, important: important };
+  }
+
   window.tdAddDailyNote = async function(ev, category){
     ev.preventDefault();
     var f = ev.target;
-    var date = f.note_date.value || todayStr();
-    var content = f.content.value.trim();
-    if (!content) return;
+    var raw = f.content.value.trim();
+    if (!raw) return;
+    var p = parseQuickInput(raw);
+    var useParsed = !!p.content;
+    var content = useParsed ? p.content : raw;
+    var date = (useParsed && p.date) ? p.date : (f.note_date.value || todayStr());
+    var row = { note_date: date, content: content, is_done: false, category: category };
+    if (useParsed && p.important) row.important = true;
     f.content.value = '';
-    var r = await sb.from('daily_notes').insert({ note_date: date, content: content, is_done: false, category: category });
-    if (r.error) alert('新增失敗：' + r.error.message);
-    await loadAll();
+    var r = await sb.from('daily_notes').insert(row).select().single();
+    if (r.error) { alert('新增失敗：' + r.error.message); return; }
+    dailyNotes.push(r.data);
+    render();
   };
-  window.tdToggleDailyNoteDone = async function(id, current){
-    await sb.from('daily_notes').update({ is_done: !current }).eq('id', id);
-    await loadAll();
+
+  // 先更新畫面再寫入資料庫，失敗才重新載入
+  async function patchNote(id, patch){
+    var n = dailyNotes.find(function(x){ return x.id === id; });
+    if (!n) return;
+    Object.assign(n, patch);
+    render();
+    var r = await sb.from('daily_notes').update(patch).eq('id', id);
+    if (r.error) { alert('儲存失敗：' + r.error.message); await loadAll(true); }
+  }
+  window.tdToggleDailyNoteDone = function(id, current){ return patchNote(id, { is_done: !current }); };
+  window.tdToggleNoteImportant = function(id){
+    var n = dailyNotes.find(function(x){ return x.id === id; });
+    if (n) return patchNote(id, { important: !n.important });
+  };
+  window.tdPostponeNote = function(id, mode){
+    var today = todayMid(), d;
+    if (mode === 'tomorrow') d = addDaysTo(today, 1);
+    else d = addDaysTo(today, ((1 - today.getDay() + 7) % 7) || 7);
+    return patchNote(id, { note_date: isoOf(d) });
   };
   window.tdDeleteDailyNote = async function(id){
-    await sb.from('daily_notes').delete().eq('id', id);
-    await loadAll();
+    var idx = dailyNotes.findIndex(function(x){ return x.id === id; });
+    if (idx < 0) return;
+    dailyNotes.splice(idx, 1);
+    render();
+    var r = await sb.from('daily_notes').delete().eq('id', id);
+    if (r.error) { alert('刪除失敗：' + r.error.message); await loadAll(true); }
+  };
+  window.tdOpenNoteModal = function(id){
+    var n = dailyNotes.find(function(x){ return x.id === id; });
+    if (!n) return;
+    modal_editing_id = id;
+    modal = { type: 'dailyNote', mode: 'edit', data: Object.assign({}, n) };
+    render();
+  };
+  window.tdSubmitNote = async function(ev){
+    ev.preventDefault();
+    var f = ev.target;
+    var content = f.content.value.trim();
+    if (!content) return;
+    var id = modal_editing_id;
+    var patch = { content: content, note_date: f.note_date.value || todayStr(), category: f.category.value, important: f.important.checked };
+    modal = null; modal_editing_id = null;
+    await patchNote(id, patch);
+  };
+
+  // ---- 重複待辦：每週／每月自動產生（開啟網頁時補齊今天起 7 天內的份） ----
+  function recurLabel(r){
+    if (r.freq === 'monthly') return '每月' + r.day + '號';
+    return '每週' + ['日','一','二','三','四','五','六'][r.day];
+  }
+  function recurringOccurrences(r, today){
+    var end = addDaysTo(today, 6), floor = addDaysTo(today, -14);
+    var start = new Date(r.created_at); start = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+    if (start < floor) start = floor;
+    if (r.last_generated) { var lg = addDaysTo(parseDate(r.last_generated), 1); if (lg > start) start = lg; }
+    var out = [];
+    for (var d = start; d <= end; d = addDaysTo(d, 1)) {
+      var hit = r.freq === 'weekly'
+        ? d.getDay() === r.day
+        : d.getDate() === Math.min(r.day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate());
+      if (hit) out.push(isoOf(d));
+    }
+    return out;
+  }
+  async function generateRecurring(){
+    if (!recurringNotes.length) return false;
+    var today = todayMid(), endStr = isoOf(addDaysTo(today, 6));
+    var inserts = [], pending = [];
+    recurringNotes.forEach(function(r){
+      if (r.last_generated && r.last_generated >= endStr) return;
+      recurringOccurrences(r, today).forEach(function(ds){
+        inserts.push({ note_date: ds, content: r.content, category: r.category || 'other', important: !!r.important, is_done: false, recurring_id: r.id, recurring_key: r.id + '|' + ds });
+      });
+      pending.push(r);
+    });
+    if (inserts.length) {
+      var ir = await sb.from('daily_notes').upsert(inserts, { onConflict: 'recurring_key', ignoreDuplicates: true });
+      if (ir.error) { console.error('recurring generate error', ir.error); return false; }
+    }
+    for (var i = 0; i < pending.length; i++) {
+      var ur = await sb.from('recurring_notes').update({ last_generated: endStr }).eq('id', pending[i].id);
+      if (!ur.error) pending[i].last_generated = endStr;
+    }
+    return inserts.length > 0;
+  }
+  window.tdOpenRecurringModal = function(){
+    modal = { type: 'recurring', mode: 'add', data: {} };
+    render();
+  };
+  window.tdSubmitRecurring = async function(ev){
+    ev.preventDefault();
+    var f = ev.target;
+    var content = f.content.value.trim();
+    if (!content) return;
+    var freq = f.freq.value;
+    var day = parseInt(freq === 'weekly' ? f.weekday.value : f.monthday.value, 10);
+    var r = await sb.from('recurring_notes').insert({ content: content, category: f.category.value, important: f.important.checked, freq: freq, day: day });
+    if (r.error) { alert('新增失敗：' + r.error.message + '\n（請確認已經執行最新的 SQL）'); return; }
+    modal = null;
+    await loadAll(true);
+  };
+  window.tdDeleteRecurring = async function(id){
+    if (!confirm('刪除這個重複待辦？已經產生的待辦不會被刪掉。')) return;
+    var r = await sb.from('recurring_notes').delete().eq('id', id);
+    if (r.error) { alert('刪除失敗：' + r.error.message); return; }
+    recurringNotes = recurringNotes.filter(function(x){ return x.id !== id; });
+    render();
   };
   function pendingDailyNotesCount(){
     var today = todayStr();
     return dailyNotes.filter(function(n){ return !n.is_done && n.note_date <= today; }).length;
   }
   window.tdToggleHistory = function(category){ showCompletedHistory[category] = !showCompletedHistory[category]; render(); };
+  window.tdSetNoteTab = function(tab){ mobileNoteTab = tab; render(); };
   window.tdToggleHistoryDay = function(key){ expandedHistoryDays[key] = !expandedHistoryDays[key]; render(); };
   window.tdToggleHistoryMonth = function(key){ expandedHistoryMonths[key] = !expandedHistoryMonths[key]; render(); };
   window.tdDragStart = function(ev, id){
@@ -949,7 +1137,7 @@
         ? ' draggable="true" ondragstart="tdDragStart(event,\'' + c.id + '\')" ondragover="tdDragOver(event)" ondrop="tdDropReorder(event,\'' + c.id + '\')"'
         : '';
       html += '<div class="bg-white border border-slate-200 border-l-4 ' + cc.border + ' rounded-xl overflow-hidden' + (reorderMode?' cursor-move':'') + '"' + dragAttrs + '>' +
-        '<div class="flex items-center gap-3 px-4 py-3 ' + (reorderMode?'':'cursor-pointer hover:bg-slate-50') + '" onclick="' + (reorderMode?'':'tdToggleClient(\''+c.id+'\')') + '">' +
+        '<div class="flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-2 px-3 md:px-4 py-3 ' + (reorderMode?'':'cursor-pointer hover:bg-slate-50') + '" onclick="' + (reorderMode?'':'tdToggleClient(\''+c.id+'\')') + '">' +
           (reorderMode ? '<span class="text-slate-300 shrink-0" title="拖曳排序">⠿</span>' : '') +
           '<span class="text-xs text-slate-400 w-3">' + (expanded?'▾':'▸') + '</span>' +
           '<span class="w-6 h-6 rounded-full ' + cc.avatar + ' text-white text-xs font-bold flex items-center justify-center shrink-0">' + esc((c.name||'?').charAt(0).toUpperCase()) + '</span>' +
@@ -985,7 +1173,7 @@
             ['刪除案件', "tdToggleActionMenu('" + kkey + "'); tdDeleteCampaign('" + camp.id + "')", 'text-rose-500']
           ];
           html += '<div class="border border-slate-100 rounded-lg bg-slate-50/60">' +
-            '<div class="flex items-center gap-2 px-3 py-2 cursor-pointer" onclick="tdToggleCampaign(\'' + camp.id + '\')">' +
+            '<div class="flex flex-wrap md:flex-nowrap items-center gap-x-2 gap-y-1.5 px-3 py-2 cursor-pointer" onclick="tdToggleCampaign(\'' + camp.id + '\')">' +
               '<span class="text-xs text-slate-400 w-3">' + (campExpanded?'▾':'▸') + '</span>' +
               '<span class="text-sm font-semibold">' + esc(camp.name) + '</span>' +
               campaignBadge(camp) +
@@ -1142,7 +1330,7 @@
     items.push(['複製', "tdToggleActionMenu('" + key + "'); tdDuplicateLead('" + l.id + "')"]);
     items.push(['刪除名單', "tdToggleActionMenu('" + key + "'); tdDeleteLead('" + l.id + "')", 'text-rose-500']);
 
-    var leftHtml = '<div class="w-[35%] min-w-0 pr-3 border-r border-slate-100">' +
+    var leftHtml = '<div class="w-full md:w-[35%] min-w-0 md:pr-3 md:border-r border-slate-100 pb-2 md:pb-0">' +
       '<div class="flex items-center gap-1.5 flex-wrap">' +
         '<span class="font-semibold text-sm truncate">' + esc(l.name) + '</span>' +
         (srcMeta ? '<span class="text-xs font-semibold px-1.5 py-0.5 rounded-full ' + srcMeta.cls + '">' + srcMeta.label + '</span>' : '') +
@@ -1176,13 +1364,13 @@
           }).join('') +
         '</div>' : '');
     }
-    var centerHtml = '<div class="w-[40%] min-w-0 px-3 border-r border-slate-100">' + centerInner + '</div>';
+    var centerHtml = '<div class="w-full md:w-[40%] min-w-0 md:px-3 md:border-r border-slate-100 py-2 md:py-0 border-t md:border-t-0">' + centerInner + '</div>';
 
     var overdue = l.next_followup_date && dayDiff(l.next_followup_date) < 0;
     var followHtml = l.next_followup_date
       ? '<div class="text-xs ' + (overdue?'text-rose-600 font-semibold':'text-slate-500') + '">下次追蹤：' + fmtDate(l.next_followup_date) + (overdue?'（已過期）':'') + '</div>'
       : '<div class="text-xs text-slate-300">尚未安排追蹤</div>';
-    var rightHtml = '<div class="w-[25%] min-w-0 pl-3">' +
+    var rightHtml = '<div class="w-full md:w-[25%] min-w-0 md:pl-3 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">' +
       '<div class="flex items-center justify-between mb-1.5">' +
         statusBadge(st) +
         '<div onclick="event.stopPropagation()">' + actionsButtonHtml(key, items) + '</div>' +
@@ -1191,7 +1379,7 @@
       '<div class="mt-1.5" onclick="event.stopPropagation()">' + tagsInlineHtml('lead', l.id) + '</div>' +
     '</div>';
 
-    return '<div class="bg-white border border-slate-200 rounded-xl p-3 flex items-start cursor-pointer hover:border-slate-300" onclick="tdOpenLeadModal(\'' + l.id + '\')">' + leftHtml + centerHtml + rightHtml + '</div>';
+    return '<div class="bg-white border border-slate-200 rounded-xl p-3 flex flex-col md:flex-row md:items-start cursor-pointer hover:border-slate-300" onclick="tdOpenLeadModal(\'' + l.id + '\')">' + leftHtml + centerHtml + rightHtml + '</div>';
   }
 
   window.tdSetLeadFilter = function(kind, val){
@@ -1367,8 +1555,8 @@
         var cli = clients.find(function(c){return c.id===cliId;});
         var rows = byClient[cliId].map(function(f){
           var camp = campaigns.find(function(c){return c.id===f.campaign_id;});
-          return '<div class="flex items-center gap-3 px-3 py-2 border-t border-slate-100 text-sm">' +
-            '<div class="w-52 shrink-0 min-w-0">' +
+          return '<div class="flex flex-wrap md:flex-nowrap items-center gap-x-3 gap-y-1.5 px-3 py-2 border-t border-slate-100 text-sm">' +
+            '<div class="w-full md:w-52 md:shrink-0 min-w-0">' +
               '<div class="text-sm font-semibold truncate" title="' + esc(f.flight_name || mediaLabel(f)) + '">' + esc(f.flight_name || mediaLabel(f)) + '</div>' +
               '<div class="text-xs text-slate-400 truncate" title="' + esc(camp?camp.name:'') + '">' + esc(camp?camp.name:'') + '</div>' +
             '</div>' +
@@ -1568,11 +1756,61 @@
     '</form>';
   }
 
+  function renderNoteModal(m){
+    var d = m.data;
+    return '<form onsubmit="tdSubmitNote(event)" class="p-5 overflow-y-auto flex-1">' +
+      fieldHtml('內容', '<textarea name="content" rows="3" class="' + inputClass() + '">' + esc(d.content || '') + '</textarea>') +
+      fieldHtml('日期', dateInput('note_date', d.note_date)) +
+      fieldHtml('分類', selectHtml('category', DAILY_NOTE_CATEGORIES, d.category || 'other')) +
+      '<div class="mb-3">' + checkboxHtml('important', !!d.important, '⭐ 標為重要（排在當天最上面）') + '</div>' +
+      '<div class="flex gap-2 mt-4">' +
+        '<button type="button" onclick="tdCloseModal()" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm">取消</button>' +
+        '<button type="submit" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">儲存</button>' +
+      '</div>' +
+    '</form>';
+  }
+  function renderRecurringModal(m){
+    var catLabel = function(key){ var c = DAILY_NOTE_CATEGORIES.find(function(x){ return x[0] === key; }); return c ? c[1] : '其他'; };
+    var list = recurringNotes.length
+      ? recurringNotes.map(function(r){
+          return '<div class="flex items-center gap-2 text-xs py-2 border-b border-slate-100 last:border-b-0">' +
+            '<span class="text-slate-500 shrink-0">' + recurLabel(r) + '</span>' +
+            '<span class="flex-1 min-w-0 truncate">' + (r.important ? '★ ' : '') + esc(r.content) + '</span>' +
+            '<span class="text-slate-400 shrink-0">' + catLabel(r.category) + '</span>' +
+            '<button onclick="tdDeleteRecurring(\'' + r.id + '\')" class="text-slate-300 hover:text-rose-500">✕</button>' +
+          '</div>';
+        }).join('')
+      : '<div class="text-xs text-slate-400 py-3">還沒有重複待辦。</div>';
+    var toggle = "document.getElementById('rec-wd').style.display=this.value==='weekly'?'':'none';document.getElementById('rec-md').style.display=this.value==='monthly'?'':'none'";
+    var weekdayOpts = [[1,'星期一'],[2,'星期二'],[3,'星期三'],[4,'星期四'],[5,'星期五'],[6,'星期六'],[0,'星期日']];
+    var monthdayOpts = []; for (var i = 1; i <= 31; i++) monthdayOpts.push([i, i + ' 號']);
+    return '<div class="p-5 overflow-y-auto flex-1">' +
+      '<div class="text-xs font-semibold text-slate-500 mb-1">目前的重複待辦</div>' +
+      '<div class="mb-5 border border-slate-200 rounded-lg px-3">' + list + '</div>' +
+      '<form onsubmit="tdSubmitRecurring(event)">' +
+        '<div class="text-xs font-semibold text-slate-500 mb-2">新增重複待辦</div>' +
+        fieldHtml('內容', textInput('content', '')) +
+        '<div class="grid grid-cols-2 gap-x-3">' +
+          fieldHtml('頻率', selectHtml('freq', [['weekly','每週'],['monthly','每月']], 'weekly', toggle)) +
+          '<div id="rec-wd">' + fieldHtml('星期', selectHtml('weekday', weekdayOpts, 1)) + '</div>' +
+          '<div id="rec-md" style="display:none">' + fieldHtml('每月幾號', selectHtml('monthday', monthdayOpts, 5)) + '</div>' +
+        '</div>' +
+        fieldHtml('分類', selectHtml('category', DAILY_NOTE_CATEGORIES, 'other')) +
+        '<div class="mb-3">' + checkboxHtml('important', false, '⭐ 標為重要') + '</div>' +
+        '<div class="text-xs text-slate-400 mb-3">開啟網頁時，會自動產生今天起 7 天內要做的份。</div>' +
+        '<div class="flex gap-2 mt-4">' +
+          '<button type="button" onclick="tdCloseModal()" class="flex-1 py-2 rounded-lg border border-slate-200 text-slate-600 text-sm">關閉</button>' +
+          '<button type="submit" class="flex-1 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold">新增</button>' +
+        '</div>' +
+      '</form>' +
+    '</div>';
+  }
+
   function renderModal(){
     if (!modal) return '';
-    var title = { client:'客戶', campaign:'產品／活動案件', flight:'廣告檔期', link:'連結', tag:'標籤', lead:'名單客戶', leadContact:'聯繫紀錄' }[modal.type];
-    var body = modal.type==='client' ? renderClientModal(modal) : modal.type==='campaign' ? renderCampaignModal(modal) : modal.type==='flight' ? renderFlightModal(modal) : modal.type==='tag' ? renderTagModal(modal) : modal.type==='lead' ? renderLeadModal(modal) : modal.type==='leadContact' ? renderLeadContactModal(modal) : renderLinkModal(modal);
-    var isNarrow = modal.type === 'link' || modal.type === 'tag' || modal.type === 'leadContact';
+    var title = { client:'客戶', campaign:'產品／活動案件', flight:'廣告檔期', link:'連結', tag:'標籤', lead:'名單客戶', leadContact:'聯繫紀錄', dailyNote:'待辦事項', recurring:'重複待辦' }[modal.type];
+    var body = modal.type==='client' ? renderClientModal(modal) : modal.type==='campaign' ? renderCampaignModal(modal) : modal.type==='flight' ? renderFlightModal(modal) : modal.type==='tag' ? renderTagModal(modal) : modal.type==='lead' ? renderLeadModal(modal) : modal.type==='leadContact' ? renderLeadContactModal(modal) : modal.type==='dailyNote' ? renderNoteModal(modal) : modal.type==='recurring' ? renderRecurringModal(modal) : renderLinkModal(modal);
+    var isNarrow = modal.type === 'link' || modal.type === 'tag' || modal.type === 'leadContact' || modal.type === 'dailyNote';
     return '<div class="fixed inset-0 bg-slate-900/40 z-40 flex justify-end">' +
       '<div class="w-full ' + (isNarrow?'max-w-sm':'max-w-lg') + ' bg-white h-full flex flex-col">' +
         '<div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between shrink-0">' +
@@ -1593,7 +1831,7 @@
     if (!loaded) { document.getElementById('root').innerHTML = '<div class="h-screen flex items-center justify-center text-slate-400 text-sm">載入中...</div>'; return; }
 
     var todoCount = pendingDailyNotesCount();
-    var sidebarHtml = '<aside class="w-56 bg-white border-r border-slate-200 flex flex-col shrink-0">' +
+    var sidebarHtml = '<aside class="hidden md:flex w-56 bg-white border-r border-slate-200 flex-col shrink-0">' +
       '<div class="h-14 flex items-center px-4 border-b border-slate-200 font-bold text-slate-800 text-sm">客戶專案管理</div>' +
       '<nav class="flex-1 overflow-y-auto py-2">' + NAV.map(function(n){
         var active = activeView === n.key;
@@ -1602,11 +1840,23 @@
     '</aside>';
 
     var viewTitle = NAV.find(function(n){return n.key===activeView;}).label;
-    var topbarHtml = '<header class="h-14 border-b border-slate-200 bg-white flex items-center gap-3 px-4 shrink-0 relative">' +
-      '<div class="font-semibold text-sm mr-2">' + viewTitle + '</div>' +
-      '<input placeholder="全域搜尋：客戶、案件、媒體、聯絡人..." value="' + esc(globalSearch) + '" oninput="tdSetSearch(this.value)" class="flex-1 max-w-md px-3 py-1.5 border border-slate-200 rounded-lg text-sm">' +
+    var topbarHtml = '<header class="h-14 border-b border-slate-200 bg-white flex items-center gap-2 md:gap-3 px-3 md:px-4 shrink-0 relative">' +
+      '<div class="font-semibold text-sm mr-1 md:mr-2 shrink-0">' + viewTitle + '</div>' +
+      '<input placeholder="全域搜尋：客戶、案件、媒體、聯絡人..." value="' + esc(globalSearch) + '" oninput="tdSetSearch(this.value)" class="flex-1 min-w-0 max-w-md px-3 py-1.5 border border-slate-200 rounded-lg text-sm">' +
       '<div class="relative"><button onclick="tdSetView(\'dashboard\')" class="text-sm px-2">🔔' + (todoCount?('<span class="text-xs align-super text-rose-500 font-bold">'+todoCount+'</span>'):'') + '</button></div>' +
     '</header>';
+
+    var MOBILE_NAV = { dashboard: ['🏠','總覽'], clients: ['👥','客戶'], flights: ['📅','檔期'], dueSoon: ['⏰','到期'], archive: ['🗂️','結束'], leads: ['📇','名單'] };
+    var mobileNavHtml = '<nav class="md:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 flex" style="padding-bottom:env(safe-area-inset-bottom)">' +
+      NAV.map(function(nv){
+        var active = activeView === nv.key;
+        var mn = MOBILE_NAV[nv.key] || ['•', nv.label];
+        return '<button onclick="tdSetView(\'' + nv.key + '\')" class="relative flex-1 py-2 flex flex-col items-center gap-0.5 text-[11px] ' + (active ? 'text-indigo-600 font-semibold' : 'text-slate-500') + '">' +
+          '<span class="text-lg leading-none">' + mn[0] + '</span><span>' + mn[1] + '</span>' +
+          (nv.key==='dashboard' && todoCount ? '<span class="absolute top-1 left-1/2 ml-2 text-[10px] bg-rose-500 text-white rounded-full px-1 leading-4">' + todoCount + '</span>' : '') +
+        '</button>';
+      }).join('') +
+    '</nav>';
 
     var mainHtml;
     switch(activeView){
@@ -1623,13 +1873,13 @@
     var prevScrollTop = prevMainEl ? prevMainEl.scrollTop : 0;
 
     document.getElementById('root').innerHTML =
-      '<div class="h-screen flex overflow-hidden">' +
+      '<div class="app-h flex overflow-hidden">' +
         sidebarHtml +
-        '<div class="flex-1 flex flex-col overflow-hidden">' +
+        '<div class="flex-1 min-w-0 flex flex-col overflow-hidden">' +
           topbarHtml +
-          '<main id="td-main" class="flex-1 overflow-y-auto p-6">' + mainHtml + '</main>' +
+          '<main id="td-main" class="flex-1 overflow-y-auto p-3 pb-24 md:p-6">' + mainHtml + '</main>' +
         '</div>' +
-      '</div>' + renderModal();
+      '</div>' + mobileNavHtml + renderModal();
 
     var newMainEl = document.getElementById('td-main');
     if (newMainEl) newMainEl.scrollTop = prevScrollTop;
